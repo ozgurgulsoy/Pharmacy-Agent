@@ -1,6 +1,7 @@
 """Main CLI interface for Pharmacy SUT Checker."""
 
 import sys
+import time
 import logging
 from pathlib import Path
 from typing import Optional
@@ -111,23 +112,37 @@ class PharmacyCLI:
     def process_report(self, report_text: str):
         """Raporu işler ve sonuçları gösterir."""
         try:
+            # Start total timing
+            total_start = time.time()
+            timings = {}
+
             # 1. Parse report
             self.console.print("\n[cyan]📋 Rapor analiz ediliyor...[/cyan]")
+            parse_start = time.time()
             parsed_report = self.parser.parse_report(report_text)
+            timings['parsing'] = (time.time() - parse_start) * 1000
             
             self.show_report_info(parsed_report)
 
             # 2. Her ilaç için RAG retrieval
             self.console.print("\n[cyan]🔍 SUT dokümanında arama yapılıyor...[/cyan]")
-            sut_chunks_per_drug = self.retriever.retrieve_for_multiple_drugs(
+            retrieval_start = time.time()
+            sut_chunks_per_drug, retrieval_timings = self.retriever.retrieve_for_multiple_drugs(
                 drugs=parsed_report.drugs,
                 diagnosis=parsed_report.diagnoses[0] if parsed_report.diagnoses else None,
                 patient=parsed_report.patient,
                 top_k_per_drug=5
             )
+            timings['retrieval'] = (time.time() - retrieval_start) * 1000
+            timings['retrieval_per_drug'] = timings['retrieval'] / len(parsed_report.drugs) if parsed_report.drugs else 0
+            
+            # Add detailed retrieval breakdown
+            if retrieval_timings:
+                timings['retrieval_breakdown'] = retrieval_timings
 
             # 3. Her ilaç için eligibility check
             self.console.print("\n[cyan]💊 İlaçlar değerlendiriliyor...[/cyan]\n")
+            eligibility_start = time.time()
             results = self.eligibility_checker.check_multiple_drugs(
                 drugs=parsed_report.drugs,
                 diagnoses=parsed_report.diagnoses,
@@ -136,9 +151,17 @@ class PharmacyCLI:
                 sut_chunks_per_drug=sut_chunks_per_drug,
                 explanations=parsed_report.explanations
             )
+            timings['eligibility_check'] = (time.time() - eligibility_start) * 1000
+            timings['eligibility_per_drug'] = timings['eligibility_check'] / len(parsed_report.drugs) if parsed_report.drugs else 0
+
+            # Total time
+            timings['total'] = (time.time() - total_start) * 1000
 
             # 4. Sonuçları göster
             self.show_results(results)
+            
+            # 5. Performance metrics
+            self.show_performance_metrics(timings, len(parsed_report.drugs))
 
         except Exception as e:
             self.console.print(f"\n[bold red]✗ Hata: {e}[/bold red]")
@@ -231,6 +254,102 @@ class PharmacyCLI:
         self.console.print(f"  ✅ Uygun: {eligible_count}")
         self.console.print(f"  ⚠️  Koşullu: {conditional_count}")
         self.console.print(f"  ❌ Uygun değil: {not_eligible_count}")
+        self.console.print()
+
+    def show_performance_metrics(self, timings: dict, drug_count: int):
+        """İşlem sürelerini gösterir."""
+        self.console.print("\n")
+        self.console.print("═" * 60, style="bold")
+        self.console.print("[bold cyan]⚡ PERFORMANS METRİKLERİ[/bold cyan]")
+        self.console.print("═" * 60, style="bold")
+        
+        perf_table = Table(show_header=True, header_style="bold cyan")
+        perf_table.add_column("İşlem", style="cyan", width=35)
+        perf_table.add_column("Süre", justify="right", style="green")
+        perf_table.add_column("Detay", justify="right", style="dim")
+        
+        # Parsing
+        perf_table.add_row(
+            "📋 Rapor Analizi",
+            f"{timings['parsing']:.1f}ms",
+            ""
+        )
+        
+        # RAG Retrieval - with breakdown if available
+        if 'retrieval_breakdown' in timings and timings['retrieval_breakdown']:
+            breakdown = timings['retrieval_breakdown']
+            perf_table.add_row(
+                "🔍 RAG Retrieval (Toplam)",
+                f"{timings['retrieval']:.1f}ms",
+                f"{timings['retrieval_per_drug']:.1f}ms/ilaç"
+            )
+            # Add detailed breakdown
+            perf_table.add_row(
+                "  ├─ Keyword Search (O(1))",
+                f"{breakdown.get('keyword_search', 0):.1f}ms",
+                "İlaç index lookup"
+            )
+            perf_table.add_row(
+                "  ├─ Embedding Creation",
+                f"{breakdown.get('embedding_creation', 0):.1f}ms",
+                "Query vektörü"
+            )
+            perf_table.add_row(
+                "  ├─ Vector Search",
+                f"{breakdown.get('vector_search', 0):.1f}ms",
+                "FAISS similarity"
+            )
+            perf_table.add_row(
+                "  └─ Hybrid Reranking",
+                f"{breakdown.get('reranking', 0):.1f}ms",
+                "Score combination"
+            )
+        else:
+            perf_table.add_row(
+                "🔍 RAG Retrieval (Toplam)",
+                f"{timings['retrieval']:.1f}ms",
+                f"{timings['retrieval_per_drug']:.1f}ms/ilaç"
+            )
+        
+        # Eligibility Check
+        perf_table.add_row(
+            "💊 Uygunluk Kontrolü (Toplam)",
+            f"{timings['eligibility_check']:.1f}ms",
+            f"{timings['eligibility_per_drug']:.1f}ms/ilaç"
+        )
+        
+        # Separator
+        perf_table.add_row("", "", "")
+        
+        # Total
+        perf_table.add_row(
+            "[bold]⏱️  TOPLAM İŞLEM SÜRESİ[/bold]",
+            f"[bold]{timings['total']:.1f}ms[/bold]",
+            f"[bold]{timings['total']/1000:.2f}s[/bold]"
+        )
+        
+        self.console.print(perf_table)
+        
+        # Performance rating
+        total_seconds = timings['total'] / 1000
+        if total_seconds < 2:
+            rating = "[bold green]🚀 Mükemmel[/bold green]"
+        elif total_seconds < 5:
+            rating = "[bold cyan]✨ Çok İyi[/bold cyan]"
+        elif total_seconds < 10:
+            rating = "[bold yellow]👍 İyi[/bold yellow]"
+        else:
+            rating = "[bold red]🐌 Yavaş[/bold red]"
+        
+        self.console.print(f"\n  Performans: {rating}")
+        self.console.print(f"  İlaç sayısı: {drug_count}")
+        
+        # Show hybrid search efficiency
+        if 'retrieval_breakdown' in timings and timings['retrieval_breakdown']:
+            breakdown = timings['retrieval_breakdown']
+            keyword_time = breakdown.get('keyword_search', 0)
+            self.console.print(f"  Keyword lookup: {keyword_time:.2f}ms (O(1) drug index)")
+        
         self.console.print()
 
     def run(self):

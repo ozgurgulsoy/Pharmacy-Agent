@@ -20,9 +20,9 @@ EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "ollama")  # "ollama" 
 LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-5-mini")
 
 # Chunk Settings - Optimized for SUT regulatory documents with hierarchical structure
-CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "800"))  # ~200 tokens - captures complete subsections
-CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "150"))  # ~40 tokens - maintains context between chunks
-TOP_K_CHUNKS: int = int(os.getenv("TOP_K_CHUNKS", "5"))
+CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "1000"))  # ~200 tokens - captures complete subsections
+CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "200"))  # ~40 tokens - maintains context between chunks
+TOP_K_CHUNKS: int = int(os.getenv("TOP_K_CHUNKS", "4"))
 
 # Language Settings
 OUTPUT_LANGUAGE: str = os.getenv("OUTPUT_LANGUAGE", "turkish")

@@ -79,7 +79,10 @@ Görevin:
 3. Detaylı ve anlaşılır Türkçe açıklama yap
 
 ÖNEMLI KURALLAR:
-- Sadece SUT'ta yazanlarıölçü olarak kullan
+- Sadece SUT'ta yazanları ölçü olarak kullan
+- **RAPOR AÇIKLAMALARI bölümündeki klinik değerler (LDL, statin kullanım süresi, tansiyon vb.) doğrudan SUT kriterlerini karşılamak için kullanılmalıdır**
+- SUT'taki her bir koşulu (örn: "LDL > 100 mg/dL", "en az 6 ay statin") rapordaki açıklamalarla BİREBİR KARŞILAŞTIR
+- Rapor açıklamalarında açıkça belirtilen kriterleri "eksik bilgi" olarak değerlendirme
 - Emin olmadığın durumlarda "CONDITIONAL" (Koşullu) sonucu ver
 - Eksik bilgi varsa açıkça belirt
 - Hasta güvenliği önceliklidir - şüpheli durumlarda "Doktora danışın" öner
@@ -143,15 +146,22 @@ USER_PROMPT_TEMPLATE = """
 
 Lütfen yukarıdaki bilgilere göre **{drug_name}** ilacının SGK kapsamında karşılanıp karşılanmayacağını değerlendir.
 
-**ÖNEMLİ**: Rapor Açıklamaları bölümünde yer alan klinik bilgileri (LDL değerleri, statin kullanım süresi, anjiyo tarihleri vb.) dikkatlice değerlendir ve SUT koşullarıyla karşılaştır.
+**KRİTİK: Rapor Açıklamaları bölümündeki klinik değerleri SUT koşullarıyla DOĞRUDAN KARŞILAŞTIR**
 
-Özellikle şunlara dikkat et:
-1. SUT'ta bu ilaç için özel kullanım koşulları var mı?
-2. Rapordaki tanı bu ilaç için uygun mu?
-3. Doktor branşı rapor yazma yetkisine sahip mi?
-4. Hasta yaşı veya diğer özellikler kullanım için uygun mu?
-5. Rapor açıklamalarında verilen klinik değerler (LDL, statin kullanımı vb.) SUT koşullarını karşılıyor mu?
-6. Eksik olan bilgiler var mı?
+Değerlendirme adımları (sırayla):
+1. SUT'taki her bir koşulu belirle (örn: "LDL > 100 mg/dL", "en az 6 ay statin tedavisi")
+2. Her koşul için Rapor Açıklamaları'nda AYNEN karşılığını ara
+3. Açıklamada açıkça belirtilen değerleri (örn: "LDL: 126 mg/dl", "En az 6 ay statin") koşulun karşılandığı kanıtı olarak kullan
+4. Sadece raporda HİÇ bahsedilmeyen bilgileri "eksik" olarak işaretle
+
+Özellikle kontrol et:
+1. SUT'taki sayısal kriterler (LDL, tansiyon, süre vb.) rapordaki değerlerle eşleşiyor mu?
+2. SUT'taki süre koşulları (örn: "en az 6 ay") raporda belirtilmiş mi?
+3. Doktor branşı SUT'ta belirtilen yetkili branşlar arasında mı?
+4. Hasta yaşı veya diğer özellikler SUT'taki sınırlar içinde mi?
+5. Tanı SUT'taki endikasyonlarla uyumlu mu?
+
+**UNUTMA**: Rapor açıklamalarında açıkça yazılan her bilgi, o koşulun KARŞILANDIĞI anlamına gelir. Eksik bilgi sadece raporda HİÇ bahsedilmeyenlerdir.
 
 Yanıtını JSON formatında ver.
 """

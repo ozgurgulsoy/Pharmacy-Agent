@@ -20,6 +20,7 @@ class FAISSVectorStore:
         self.index: Optional[faiss.Index] = None
         self.metadata: List[Dict[str, Any]] = []
         self.id_to_idx: Dict[str, int] = {}
+        self.drug_index: Dict[str, List[int]] = {}  # Drug name -> chunk indices for O(1) lookup
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def create_index(self, dimension: int = EMBEDDING_DIMENSION) -> None:
@@ -33,6 +34,7 @@ class FAISSVectorStore:
         self.index = faiss.IndexFlatL2(dimension)
         self.metadata = []
         self.id_to_idx = {}
+        self.drug_index = {}
         self.logger.info(f"Created new FAISS index with dimension {dimension}")
 
     def add_embeddings(self, embeddings_data: List[Dict[str, Any]]) -> None:
@@ -51,11 +53,22 @@ class FAISSVectorStore:
             
             # Store metadata
             idx = len(self.metadata)
-            self.metadata.append({
+            meta = {
                 "id": item["id"],
                 **item["metadata"]
-            })
+            }
+            self.metadata.append(meta)
             self.id_to_idx[item["id"]] = idx
+            
+            # Build drug index for fast lookup
+            etkin_maddeler = meta.get("etkin_madde", [])
+            if isinstance(etkin_maddeler, str):
+                etkin_maddeler = [etkin_maddeler]
+            for drug in etkin_maddeler:
+                drug_lower = drug.lower()
+                if drug_lower not in self.drug_index:
+                    self.drug_index[drug_lower] = []
+                self.drug_index[drug_lower].append(idx)
 
         # Convert to numpy array and add to index
         vectors_array = np.array(vectors, dtype=np.float32)
@@ -147,7 +160,8 @@ class FAISSVectorStore:
         # Save metadata
         metadata_dict = {
             "metadata": self.metadata,
-            "id_to_idx": self.id_to_idx
+            "id_to_idx": self.id_to_idx,
+            "drug_index": self.drug_index
         }
         with open(metadata_path, 'w', encoding='utf-8') as f:
             json.dump(metadata_dict, f, ensure_ascii=False, indent=2)
@@ -177,6 +191,7 @@ class FAISSVectorStore:
         
         self.metadata = metadata_dict["metadata"]
         self.id_to_idx = metadata_dict["id_to_idx"]
+        self.drug_index = metadata_dict.get("drug_index", {})
         
         self.logger.info(f"Loaded FAISS index from {index_path}")
         self.logger.info(f"Index contains {self.index.ntotal} vectors")
@@ -194,6 +209,19 @@ class FAISSVectorStore:
             "index_type": type(self.index).__name__
         }
 
+    def get_chunks_by_drug(self, drug_name: str) -> List[int]:
+        """
+        Get chunk indices containing a specific drug (O(1) lookup).
+        
+        Args:
+            drug_name: Drug name to search for
+            
+        Returns:
+            List of chunk indices
+        """
+        drug_lower = drug_name.lower()
+        return self.drug_index.get(drug_lower, [])
+    
     def delete_all(self) -> None:
         """Clear the index and metadata."""
         self.create_index()

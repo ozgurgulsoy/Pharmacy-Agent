@@ -183,22 +183,33 @@ class SUTDocumentChunker:
 
     def _extract_etkin_maddeler(self, text: str) -> List[str]:
         """Metinden etkin maddeleri çıkarır."""
-        # Yaygın ilaç isimleri
+        # Comprehensive Turkish drug patterns - optimized for single pass
         drug_patterns = [
-            r'\b(ezetimib|statin|atorvastatin|rosuvastatin|simvastatin)\b',
-            r'\b(metoprolol|bisoprolol|carvedilol)\b',
-            r'\b(clopidogrel|aspirin|warfarin)\b',
-            # Daha fazla ilaç eklenebilir
+            # Statins & lipid medications
+            r'\b(ezetimib|statin|atorvastatin|rosuvastatin|simvastatin|niasin)\b',
+            # Beta blockers & cardiovascular
+            r'\b(metoprolol|bisoprolol|carvedilol|clopidogrel|aspirin|warfarin)\b',
+            # MS medications
+            r'\b(interferon|glatiramer|teriflunomid|dimetil fumarat|fingolimod|natalizumab|alemtuzumab|okrelizumab|kladribin|fampiridin)\b',
+            # Pulmonary hypertension
+            r'\b(iloprost|bosentan|masitentan|sildenafil|riociguat|seleksipag|tadalafil|epoprostenol|treprostinil|ambrisentan)\b',
+            # Ophthalmology (Anti-VEGF)
+            r'\b(bevacizumab|ranibizumab|aflibersept|deksametazon|verteporfin)\b',
+            # Hormones
+            r'\b(dienogest|progesteron|östrojen|östradiol|tibolon)\b',
+            # Other patterns with Turkish suffixes
+            r'\b(\w+mab|\w+stat|\w+pril|e?vok?umab|prokumab)\b',
         ]
 
         etkin_maddeler = []
         text_lower = text.lower()
 
+        # Single pass through all patterns
         for pattern in drug_patterns:
             matches = re.findall(pattern, text_lower)
             etkin_maddeler.extend(matches)
 
-        return list(set(etkin_maddeler))  # Tekrarları kaldır
+        return list(set(etkin_maddeler))  # Remove duplicates
 
     def _extract_keywords(self, text: str) -> List[str]:
         """Metinden önemli anahtar kelimeleri çıkarır."""
