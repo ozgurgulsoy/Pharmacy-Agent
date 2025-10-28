@@ -17,7 +17,7 @@ OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "qwen3-embedding:8b")
 EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "ollama")  # "ollama" or "openai"
 
-LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-5-mini")
+LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-5-nano")
 
 # Chunk Settings - Optimized for SUT regulatory documents with hierarchical structure
 CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "1000"))  # ~200 tokens - captures complete subsections
