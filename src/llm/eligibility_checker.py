@@ -101,15 +101,20 @@ class EligibilityChecker:
         """
         if not drugs:
             return []
-        
+
         # Ana tanıyı al (genellikle ilk tanı)
         primary_diagnosis = diagnoses[0] if diagnoses else Diagnosis(
             icd10_code="UNKNOWN",
             tanim="Tanı belirtilmemiş"
         )
 
-        # **OPTIMIZED: Single batched LLM call for all drugs**
+        # Try batched processing first; on failure, fall back to sequential with detailed logging
+        import time
+        batch_start = time.time()
+        self.logger.info(f"🔍 Starting eligibility check for {len(drugs)} drugs (batched attempt)")
+
         try:
+            self.logger.info(f"🚀 Attempting batched LLM call for all {len(drugs)} drugs")
             results = self._check_all_drugs_batched(
                 drugs=drugs,
                 diagnosis=primary_diagnosis,
@@ -118,22 +123,47 @@ class EligibilityChecker:
                 sut_chunks_per_drug=sut_chunks_per_drug,
                 explanations=explanations
             )
+
+            batch_elapsed = time.time() - batch_start
+            try:
+                avg_ms = (batch_elapsed * 1000) / len(drugs)
+            except Exception:
+                avg_ms = batch_elapsed * 1000
+
+            self.logger.info(f"✅ Batched check succeeded in {batch_elapsed:.2f}s (avg {avg_ms:.1f}ms/drug)")
             return results
+
         except Exception as e:
-            self.logger.error(f"Batch check failed: {e}, falling back to sequential")
-            # Fallback to sequential processing
-            results = []
-            for drug in drugs:
+            self.logger.error(f"❌ Batched LLM call failed: {type(e).__name__}: {e}")
+            self.logger.exception("Batched eligibility failure stacktrace")
+            self.logger.warning("⚠️ Falling back to sequential processing for each drug")
+
+            # Sequential fallback (kept for robustness) with per-drug timing/logging
+            results: List[EligibilityResult] = []
+            for i, drug in enumerate(drugs, 1):
+                self.logger.info(f"   ▶ Processing drug {i}/{len(drugs)}: {drug.etkin_madde}")
+                drug_start = time.time()
+
                 sut_chunks = sut_chunks_per_drug.get(drug.etkin_madde, [])
-                result = self.check_eligibility(
-                    drug=drug,
-                    diagnosis=primary_diagnosis,
-                    patient=patient,
-                    doctor=doctor,
-                    sut_chunks=sut_chunks,
-                    explanations=explanations
-                )
+                try:
+                    result = self.check_eligibility(
+                        drug=drug,
+                        diagnosis=primary_diagnosis,
+                        patient=patient,
+                        doctor=doctor,
+                        sut_chunks=sut_chunks,
+                        explanations=explanations
+                    )
+                except Exception as inner_e:
+                    self.logger.error(f"Error checking eligibility for {drug.etkin_madde}: {inner_e}")
+                    result = self._create_fallback_result(drug.etkin_madde, str(inner_e))
+
+                drug_elapsed = time.time() - drug_start
+                self.logger.info(f"   ✓ {drug.etkin_madde} done in {drug_elapsed:.2f}s")
                 results.append(result)
+
+            total_elapsed = time.time() - batch_start
+            self.logger.warning(f"⚠️ Sequential fallback completed in {total_elapsed:.2f}s for {len(drugs)} drugs")
             return results
 
     def _parse_response(self, response_json: Dict[str, Any], drug_name: str) -> EligibilityResult:

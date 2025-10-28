@@ -10,7 +10,7 @@ from rag.faiss_store import FAISSVectorStore
 from document_processing.embeddings import EmbeddingGenerator
 from models.report import Drug, Diagnosis, PatientInfo
 from models.eligibility import RetrievedChunk, Chunk
-from config.settings import EMBEDDING_PROVIDER
+from config.settings import EMBEDDING_PROVIDER, EMBEDDING_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -254,30 +254,106 @@ class RAGRetriever:
         Returns:
             ({drug_name: [chunks]} dictionary, aggregate timings)
         """
-        results = {}
-        all_timings = []
+        results: Dict[str, List[Dict[str, Any]]] = {}
+        all_timings: List[Dict[str, float]] = []
 
+        if not drugs:
+            return results, {}
+
+        import time
+        total_start = time.time()
+
+        # 1) Build all queries
+        query_build_start = time.time()
+        queries: List[str] = []
+        query_metadata: List[Dict[str, Any]] = []
         for drug in drugs:
-            chunks, timings = self.retrieve_relevant_chunks(
-                drug=drug,
-                diagnosis=diagnosis,
-                patient=patient,
+            q = self._build_query_text(drug, diagnosis, patient)
+            queries.append(q)
+            query_metadata.append({"drug": drug, "query": q})
+        query_build_time = (time.time() - query_build_start) * 1000
+
+        # 2) Create embeddings in batch if provider supports batching (OpenAI supports batching)
+        embedding_start = time.time()
+        embeddings: List[List[float]] = []
+
+        try:
+            if self.embedding_generator.provider == "openai":
+                # Use the underlying OpenAI client to create batch embeddings
+                self.logger.info(f"Creating batch embeddings for {len(queries)} queries (OpenAI)")
+                response = self.client.embeddings.create(
+                    model=EMBEDDING_MODEL,
+                    input=queries,
+                    encoding_format="float"
+                )
+                embeddings = [item.embedding for item in response.data]
+            else:
+                # Ollama or other: create sequentially
+                self.logger.info(f"Creating embeddings sequentially for {len(queries)} queries (provider={self.embedding_generator.provider})")
+                embeddings = [self.embedding_generator.create_query_embedding(q) for q in queries]
+
+        except Exception as e:
+            # If batch creation fails, fall back to per-query creation and log
+            self.logger.error(f"Batch embedding creation failed: {e}, falling back to sequential embeddings")
+            self.logger.exception(e)
+            embeddings = [self.embedding_generator.create_query_embedding(q) for q in queries]
+
+        embedding_time = (time.time() - embedding_start) * 1000
+
+        # 3) For each embedding, perform vector search + keyword + rerank
+        search_start = time.time()
+        for idx, (meta, emb) in enumerate(zip(query_metadata, embeddings)):
+            drug: Drug = meta["drug"]
+            drug_start = time.time()
+
+            # Keyword search (fast)
+            k_start = time.time()
+            keyword_results = self._keyword_search(drug.etkin_madde)
+            k_time = (time.time() - k_start) * 1000
+
+            # Vector search
+            v_start = time.time()
+            semantic_results = self.vector_store.search(
+                query_embedding=emb,
+                top_k=top_k_per_drug * 2,
+                filters={"drug_related": True} if self._has_metadata_filter() else None
+            )
+            v_time = (time.time() - v_start) * 1000
+
+            # Re-rank
+            r_start = time.time()
+            final_results = self._hybrid_rerank(
+                keyword_results=keyword_results,
+                semantic_results=semantic_results,
+                drug_name=drug.etkin_madde,
                 top_k=top_k_per_drug
             )
-            results[drug.etkin_madde] = chunks
-            all_timings.append(timings)
+            r_time = (time.time() - r_start) * 1000
 
-        # Calculate aggregate timings
-        if all_timings:
-            aggregate = {
-                'keyword_search': sum(t['keyword_search'] for t in all_timings),
-                'embedding_creation': sum(t['embedding_creation'] for t in all_timings),
-                'vector_search': sum(t['vector_search'] for t in all_timings),
-                'reranking': sum(t['reranking'] for t in all_timings),
-                'total': sum(t['total'] for t in all_timings),
-                'avg_per_drug': sum(t['total'] for t in all_timings) / len(all_timings)
-            }
-        else:
-            aggregate = {}
+            results[drug.etkin_madde] = final_results
 
+            drug_total = (time.time() - drug_start) * 1000
+            all_timings.append({
+                'keyword_search': k_time,
+                'embedding_creation': 0.0,  # accounted for in batch
+                'vector_search': v_time,
+                'reranking': r_time,
+                'total': drug_total
+            })
+
+        search_time = (time.time() - search_start) * 1000
+        total_time = (time.time() - total_start) * 1000
+
+        # Aggregate timings
+        aggregate = {
+            'query_building': query_build_time,
+            'embedding_creation': embedding_time,
+            'keyword_search': sum(t['keyword_search'] for t in all_timings),
+            'vector_search': sum(t['vector_search'] for t in all_timings),
+            'reranking': sum(t['reranking'] for t in all_timings),
+            'total': total_time,
+            'avg_per_drug': total_time / len(drugs) if drugs else 0
+        }
+
+        self.logger.info(f"Retrieved chunks for {len(drugs)} drugs in {total_time:.1f}ms (embeddings: {embedding_time:.1f}ms)")
         return results, aggregate

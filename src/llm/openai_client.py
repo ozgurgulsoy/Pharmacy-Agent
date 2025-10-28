@@ -37,6 +37,8 @@ class OpenAIClientWrapper:
             Model yanıtı
         """
         try:
+            import time
+            
             messages = [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
@@ -50,13 +52,23 @@ class OpenAIClientWrapper:
             if response_format:
                 kwargs["response_format"] = response_format
 
-            self.logger.debug(f"Sending chat completion request...")
+            # Calculate token estimate
+            prompt_tokens = len(system_prompt + user_prompt) // 4  # rough estimate
+            self.logger.info(f"🚀 Sending LLM request (model={self.model}, ~{prompt_tokens} prompt tokens)")
             
+            api_start = time.time()
             response = self.client.chat.completions.create(**kwargs)
+            api_elapsed = time.time() - api_start
             
             content = response.choices[0].message.content
             
-            self.logger.info(f"Received response ({len(content)} chars)")
+            # Log actual token usage if available
+            usage = getattr(response, 'usage', None)
+            if usage:
+                self.logger.info(f"✅ LLM response: {api_elapsed:.2f}s, {usage.prompt_tokens} prompt + {usage.completion_tokens} completion = {usage.total_tokens} total tokens")
+            else:
+                self.logger.info(f"✅ LLM response: {api_elapsed:.2f}s, {len(content)} chars")
+            
             return content
 
         except Exception as e:

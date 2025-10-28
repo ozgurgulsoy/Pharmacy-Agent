@@ -3,7 +3,10 @@
 import logging
 from typing import List, Dict, Any, Optional
 from openai import OpenAI
-import ollama
+try:
+    import ollama
+except Exception:
+    ollama = None
 
 from models.eligibility import Chunk
 from config.settings import (

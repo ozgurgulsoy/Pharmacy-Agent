@@ -40,7 +40,10 @@ class InputParser:
         if not self.validate_input(raw_text):
             raise ValueError("Geçersiz rapor formatı")
 
+        import time
         self.logger.info("Parsing report...")
+
+        total_start = time.time()
 
         # Metni temizle
         cleaned_text = self.clean_text(raw_text)
@@ -54,14 +57,21 @@ class InputParser:
         doctor = self._extract_doctor_info(cleaned_text)
 
         # **OPTIMIZED: Single LLM call for all structured data**
+        llm_start = time.time()
         all_data = self._extract_all_with_single_llm_call(cleaned_text)
-        
+        llm_time = (time.time() - llm_start) * 1000
+
         drugs = all_data.get('drugs', [])
         diagnoses = all_data.get('diagnoses', [])
         patient = all_data.get('patient', PatientInfo(cinsiyet=None, dogum_tarihi=None, yas=None))
-        
+
         # Rapor açıklamalarını çıkar (LDL, statin kullanımı vb.)
         explanations = self._extract_explanations(cleaned_text)
+
+        total_time = (time.time() - total_start) * 1000
+        self.logger.info(f"Parsing complete: total={total_time:.1f}ms, llm_extract={llm_time:.1f}ms")
+        if total_time > 5000:
+            self.logger.warning(f"⚠️ Parsing took {total_time/1000:.1f}s - investigate slow extractors or large LLM latency")
 
         parsed_report = ParsedReport(
             report_id=report_id or "UNKNOWN",
