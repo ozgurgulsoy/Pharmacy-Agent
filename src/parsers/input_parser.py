@@ -45,18 +45,20 @@ class InputParser:
         # Metni temizle
         cleaned_text = self.clean_text(raw_text)
 
-        # Rapor ID ve tarih çıkar
+        # Rapor ID ve tarih çıkar (regex - hızlı)
         report_id = self._extract_report_id(cleaned_text)
         report_date = self._extract_report_date(cleaned_text)
         hospital_code = self._extract_hospital_code(cleaned_text)
 
-        # Doktor bilgilerini çıkar
+        # Doktor bilgilerini çıkar (regex - hızlı)
         doctor = self._extract_doctor_info(cleaned_text)
 
-        # Alt extractorları kullan
-        drugs = self.drug_extractor.extract_drugs(cleaned_text)
-        diagnoses = self.diagnosis_extractor.extract_diagnoses(cleaned_text)
-        patient = self.patient_extractor.extract_patient_info(cleaned_text)
+        # **OPTIMIZED: Single LLM call for all structured data**
+        all_data = self._extract_all_with_single_llm_call(cleaned_text)
+        
+        drugs = all_data.get('drugs', [])
+        diagnoses = all_data.get('diagnoses', [])
+        patient = all_data.get('patient', PatientInfo(cinsiyet=None, dogum_tarihi=None, yas=None))
         
         # Rapor açıklamalarını çıkar (LDL, statin kullanımı vb.)
         explanations = self._extract_explanations(cleaned_text)
@@ -222,4 +224,148 @@ class InputParser:
                 return explanations
         
         return None
+
+    def _extract_all_with_single_llm_call(self, text: str) -> dict:
+        """
+        OPTIMIZED: Single LLM call to extract drugs, diagnoses, and patient info.
+        This reduces 3 sequential LLM calls to 1, cutting parse time by ~66%.
+        
+        Returns:
+            {
+                'drugs': List[Drug],
+                'diagnoses': List[Diagnosis], 
+                'patient': PatientInfo
+            }
+        """
+        try:
+            system_prompt = """Sen bir tıbbi rapor analiz asistanısın. Rapor metninden tüm bilgileri TEK SEFERDE çıkar.
+
+JSON formatında döndür:
+{
+  "drugs": [
+    {
+      "kod": "SGKF09",
+      "etkin_madde": "KLOPİDOGREL HİDROJEN SÜLFAT",
+      "form": "Ağızdan katı",
+      "tedavi_sema": "Günde 1 x 1.0 Adet",
+      "miktar": 1,
+      "eklenme_zamani": "26/12/2024"
+    }
+  ],
+  "diagnoses": [
+    {
+      "icd10_code": "I25.1",
+      "tanim": "ATEROSKLEROTİK KALP HASTALIĞI",
+      "baslangic": "26/12/2024",
+      "bitis": "25/12/2025"
+    }
+  ],
+  "patient": {
+    "cinsiyet": "Erkek",
+    "dogum_tarihi": "12/04/1954",
+    "yas": 71
+  }
+}
+
+ÖNEMLİ: TC Kimlik numarası gibi kişisel bilgileri ÇIKARMA!
+Eksik bilgiler için "UNKNOWN" veya null kullan."""
+
+            user_prompt = f"""Aşağıdaki rapor metninden TÜM bilgileri çıkar:
+
+{text}
+
+Sadece JSON formatında yanıt ver."""
+
+            response_text = self.openai_client.chat_completion(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                response_format={"type": "json_object"}
+            )
+
+            import json
+            data = json.loads(response_text)
+            
+            # Parse drugs
+            drugs = []
+            for drug_data in data.get("drugs", []):
+                eklenme_zamani = datetime.now().date()
+                if drug_data.get("eklenme_zamani") and drug_data["eklenme_zamani"] != "UNKNOWN":
+                    try:
+                        day, month, year = drug_data["eklenme_zamani"].split('/')
+                        eklenme_zamani = datetime(int(year), int(month), int(day)).date()
+                    except:
+                        pass
+
+                from models.report import Drug
+                drug = Drug(
+                    kod=drug_data.get("kod", "UNKNOWN"),
+                    etkin_madde=drug_data.get("etkin_madde", "UNKNOWN"),
+                    form=drug_data.get("form", "Ağızdan katı"),
+                    tedavi_sema=drug_data.get("tedavi_sema", "Günde 1 x 1"),
+                    miktar=drug_data.get("miktar", 1),
+                    eklenme_zamani=eklenme_zamani
+                )
+                drugs.append(drug)
+
+            # Parse diagnoses
+            diagnoses = []
+            for diag_data in data.get("diagnoses", []):
+                baslangic = None
+                bitis = None
+                
+                if diag_data.get("baslangic") and diag_data["baslangic"] != "UNKNOWN":
+                    try:
+                        day, month, year = diag_data["baslangic"].split('/')
+                        baslangic = datetime(int(year), int(month), int(day)).date()
+                    except:
+                        pass
+                
+                if diag_data.get("bitis") and diag_data["bitis"] != "UNKNOWN":
+                    try:
+                        day, month, year = diag_data["bitis"].split('/')
+                        bitis = datetime(int(year), int(month), int(day)).date()
+                    except:
+                        pass
+
+                from models.report import Diagnosis
+                diagnosis = Diagnosis(
+                    icd10_code=diag_data.get("icd10_code", "UNKNOWN"),
+                    tanim=diag_data.get("tanim", "UNKNOWN"),
+                    baslangic=baslangic,
+                    bitis=bitis
+                )
+                diagnoses.append(diagnosis)
+
+            # Parse patient info
+            patient_data = data.get("patient", {})
+            dogum_tarihi = None
+            if patient_data.get("dogum_tarihi"):
+                try:
+                    day, month, year = patient_data["dogum_tarihi"].split('/')
+                    dogum_tarihi = datetime(int(year), int(month), int(day)).date()
+                except:
+                    pass
+
+            patient = PatientInfo(
+                cinsiyet=patient_data.get("cinsiyet"),
+                dogum_tarihi=dogum_tarihi,
+                yas=patient_data.get("yas")
+            )
+
+            self.logger.info(f"Single LLM call extracted: {len(drugs)} drugs, {len(diagnoses)} diagnoses")
+            return {
+                'drugs': drugs,
+                'diagnoses': diagnoses,
+                'patient': patient
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error in combined extraction: {e}")
+            # Fallback to old method
+            self.logger.warning("Falling back to sequential extraction")
+            return {
+                'drugs': self.drug_extractor.extract_drugs(text),
+                'diagnoses': self.diagnosis_extractor.extract_diagnoses(text),
+                'patient': self.patient_extractor.extract_patient_info(text)
+            }
 

@@ -84,6 +84,9 @@ class EligibilityChecker:
     ) -> List[EligibilityResult]:
         """
         Birden fazla ilaç için uygunluk kontrolü.
+        
+        OPTIMIZED: Uses a single batched LLM call instead of sequential calls.
+        This reduces N sequential LLM calls to 1, dramatically improving performance.
 
         Args:
             drugs: İlaç listesi
@@ -96,7 +99,8 @@ class EligibilityChecker:
         Returns:
             EligibilityResult listesi
         """
-        results = []
+        if not drugs:
+            return []
         
         # Ana tanıyı al (genellikle ilk tanı)
         primary_diagnosis = diagnoses[0] if diagnoses else Diagnosis(
@@ -104,21 +108,33 @@ class EligibilityChecker:
             tanim="Tanı belirtilmemiş"
         )
 
-        for drug in drugs:
-            sut_chunks = sut_chunks_per_drug.get(drug.etkin_madde, [])
-            
-            result = self.check_eligibility(
-                drug=drug,
+        # **OPTIMIZED: Single batched LLM call for all drugs**
+        try:
+            results = self._check_all_drugs_batched(
+                drugs=drugs,
                 diagnosis=primary_diagnosis,
                 patient=patient,
                 doctor=doctor,
-                sut_chunks=sut_chunks,
+                sut_chunks_per_drug=sut_chunks_per_drug,
                 explanations=explanations
             )
-            
-            results.append(result)
-
-        return results
+            return results
+        except Exception as e:
+            self.logger.error(f"Batch check failed: {e}, falling back to sequential")
+            # Fallback to sequential processing
+            results = []
+            for drug in drugs:
+                sut_chunks = sut_chunks_per_drug.get(drug.etkin_madde, [])
+                result = self.check_eligibility(
+                    drug=drug,
+                    diagnosis=primary_diagnosis,
+                    patient=patient,
+                    doctor=doctor,
+                    sut_chunks=sut_chunks,
+                    explanations=explanations
+                )
+                results.append(result)
+            return results
 
     def _parse_response(self, response_json: Dict[str, Any], drug_name: str) -> EligibilityResult:
         """LLM JSON yanıtını EligibilityResult'a çevirir."""
@@ -172,3 +188,141 @@ class EligibilityChecker:
                 "Manuel SUT kontrolü şarttır"
             ]
         )
+
+    def _check_all_drugs_batched(
+        self,
+        drugs: List[Drug],
+        diagnosis: Diagnosis,
+        patient: PatientInfo,
+        doctor: DoctorInfo,
+        sut_chunks_per_drug: Dict[str, List[Dict[str, Any]]],
+        explanations: str = None
+    ) -> List[EligibilityResult]:
+        """
+        PERFORMANCE OPTIMIZATION: Check all drugs in a single LLM call.
+        
+        Instead of N sequential API calls (60s each), this makes 1 batched call.
+        Expected speedup: ~N times faster for N drugs.
+        
+        Args:
+            drugs: List of drugs to check
+            diagnosis: Primary diagnosis
+            patient: Patient info
+            doctor: Doctor info
+            sut_chunks_per_drug: SUT chunks for each drug
+            explanations: Report explanations
+            
+        Returns:
+            List of EligibilityResult, one per drug
+        """
+        self.logger.info(f"Batch checking {len(drugs)} drugs in single LLM call")
+        
+        # Build combined prompt for all drugs
+        from .prompts import SYSTEM_PROMPT
+        
+        explanations_section = f'📝 RAPOR AÇIKLAMALARI:\n{explanations}\n' if explanations else ''
+        
+        user_prompt = f"""Aşağıdaki {len(drugs)} ilacın SGK/SUT uygunluğunu AYNI ANDA değerlendir.
+
+📋 HASTA BİLGİLERİ:
+- Tanı: {diagnosis.icd10_code} - {diagnosis.tanim}
+- Yaş: {patient.yas or 'Bilinmiyor'}
+- Cinsiyet: {patient.cinsiyet or 'Bilinmiyor'}
+- Doktor: {doctor.name} ({doctor.specialty})
+
+{explanations_section}
+
+"""
+
+        # Add each drug with its SUT chunks
+        separator = "=" * 60
+        for i, drug in enumerate(drugs, 1):
+            sut_chunks = sut_chunks_per_drug.get(drug.etkin_madde, [])
+            
+            user_prompt += f"""
+{separator}
+💊 İLAÇ {i}/{len(drugs)}: {drug.etkin_madde}
+{separator}
+
+İlaç Bilgileri:
+- Etkin Madde: {drug.etkin_madde}
+- Form: {drug.form}
+- Tedavi Şeması: {drug.tedavi_sema}
+- Miktar: {drug.miktar}
+
+📖 İLGİLİ SUT KURALLARI:
+"""
+            
+            if sut_chunks:
+                for j, chunk in enumerate(sut_chunks[:5], 1):  # Top 5 chunks
+                    metadata = chunk.get('metadata', {})
+                    content = metadata.get('content', 'İçerik bulunamadı')
+                    user_prompt += f"\n[Chunk {j}]\n{content}\n"
+            else:
+                user_prompt += "\n⚠️ Bu ilaç için SUT kuralı bulunamadı!\n"
+
+        # Request batch response
+        user_prompt += f"""
+
+{separator}
+TOPLU DEĞERLENDİRME İSTEĞİ
+{separator}
+
+
+Yukarıdaki {len(drugs)} ilacın HER BİRİ için ayrı ayrı değerlendirme yap.
+
+JSON formatında döndür:
+{{
+  "results": [
+    {{
+      "drug_name": "İLAÇ ADI",
+      "status": "ELIGIBLE|NOT_ELIGIBLE|CONDITIONAL",
+      "confidence": 0.0-1.0,
+      "sut_reference": "SUT kuralı referansı",
+      "conditions": [
+        {{
+          "description": "Koşul açıklaması",
+          "is_met": true|false|null,
+          "required_info": "Eksik bilgi"
+        }}
+      ],
+      "explanation": "Detaylı açıklama",
+      "warnings": ["Uyarı 1", "Uyarı 2"]
+    }}
+  ]
+}}
+
+Her ilaç için AYRI bir result objesi oluştur. Toplam {len(drugs)} result olmalı.
+"""
+
+        # Make single LLM call
+        try:
+            response_json = self.client.chat_completion_json(
+                system_prompt=SYSTEM_PROMPT,
+                user_prompt=user_prompt
+            )
+            
+            # Parse results
+            results = []
+            for i, (drug, result_data) in enumerate(zip(drugs, response_json.get('results', []))):
+                try:
+                    result = self._parse_response(result_data, drug.etkin_madde)
+                    results.append(result)
+                except Exception as e:
+                    self.logger.error(f"Error parsing result for {drug.etkin_madde}: {e}")
+                    results.append(self._create_fallback_result(drug.etkin_madde, str(e)))
+            
+            # If we got fewer results than drugs, fill with fallbacks
+            while len(results) < len(drugs):
+                drug = drugs[len(results)]
+                results.append(self._create_fallback_result(
+                    drug.etkin_madde, 
+                    "Yanıt eksik - LLM tüm ilaçları değerlendiremedi"
+                ))
+            
+            self.logger.info(f"Batch check complete: {len(results)} results")
+            return results
+            
+        except Exception as e:
+            self.logger.error(f"Batch eligibility check failed: {e}")
+            raise
