@@ -1,21 +1,49 @@
-"""SUT document chunking and metadata enrichment utilities."""
+"""SUT document chunking and metadata enrichment utilities.
+
+This module implements multiple chunking strategies:
+1. Semantic Chunking: Preserves paragraphs and logical structure
+2. Fixed Chunking: Traditional size-based splitting with overlap
+3. Hybrid Chunking: Combines semantic boundaries with size limits
+"""
 
 import logging
 import re
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from dataclasses import dataclass
 
 from models.eligibility import Chunk, ChunkMetadata
-from config.settings import CHUNK_SIZE, CHUNK_OVERLAP
+from config.settings import (
+    CHUNK_SIZE, 
+    CHUNK_OVERLAP, 
+    CHUNKING_STRATEGY,
+    MIN_CHUNK_SIZE,
+    MAX_CHUNK_SIZE,
+    PRESERVE_PARAGRAPHS
+)
 
 logger = logging.getLogger(__name__)
 
 
 class SUTDocumentChunker:
-    """SUT dokümanını anlamlı parçalara bölen sınıf."""
+    """
+    SUT dokümanını anlamlı parçalara bölen sınıf.
+    
+    Supports multiple chunking strategies:
+    - semantic: Preserves paragraph boundaries and logical structure
+    - fixed: Traditional character-based chunking with overlap
+    - hybrid: Section-based chunking with size constraints (default)
+    """
 
-    def __init__(self):
+    def __init__(self, strategy: str = CHUNKING_STRATEGY):
+        """
+        Initialize the chunker.
+        
+        Args:
+            strategy: Chunking strategy ("semantic", "fixed", or "hybrid")
+        """
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.strategy = strategy
+        self.logger.info(f"Initialized chunker with strategy: {strategy}")
 
     def chunk_document(self, text: str) -> List[Chunk]:
         """
@@ -27,46 +55,231 @@ class SUTDocumentChunker:
         Returns:
             Chunk listesi
         """
-        self.logger.info("Starting document chunking...")
+        self.logger.info(f"Starting document chunking with strategy: {self.strategy}...")
 
         # Önce metni temizle
         cleaned_text = self._clean_text(text)
 
-        # Satırlara böl
-        lines = cleaned_text.split('\n')
-        chunks = []
-
-        # Madde bazlı chunking
-        section_chunks = self._chunk_by_sections(lines)
-
-        # Her chunk için metadata ekle
-        for i, (chunk_text, start_line, end_line) in enumerate(section_chunks):
-            chunk_id = f"sut_chunk_{i:04d}"
-
-            metadata = self._enrich_metadata(chunk_text, start_line, end_line)
-
-            chunk = Chunk(
-                chunk_id=chunk_id,
-                content=chunk_text,
-                metadata=metadata,
-                start_line=start_line,
-                end_line=end_line
-            )
-
-            chunks.append(chunk)
+        # Strategy'ye göre chunking yap
+        if self.strategy == "semantic":
+            chunks = self._semantic_chunking(cleaned_text)
+        elif self.strategy == "fixed":
+            chunks = self._fixed_chunking(cleaned_text)
+        else:  # hybrid (default)
+            chunks = self._hybrid_chunking(cleaned_text)
 
         self.logger.info(f"Created {len(chunks)} chunks")
         return chunks
 
     def _clean_text(self, text: str) -> str:
         """Metni temizler ve normalize eder."""
-        # Sayfa başlıklarımı kaldır
+        # Sayfa başlıklarını kaldır
         text = re.sub(r'=== Sayfa \d+ ===', '', text)
 
         # Fazla boşlukları temizle
         text = re.sub(r'\n\s*\n\s*\n', '\n\n', text)
 
         return text.strip()
+
+    # ==================== Chunking Strategies ====================
+
+    def _semantic_chunking(self, text: str) -> List[Chunk]:
+        """
+        Semantic chunking: Preserves paragraph boundaries and logical structure.
+        Best for: Maintaining context and coherent ideas.
+        
+        Args:
+            text: Cleaned text
+            
+        Returns:
+            List of chunks
+        """
+        self.logger.info("Using semantic chunking strategy")
+        
+        # Split by paragraphs (double newline)
+        paragraphs = re.split(r'\n\n+', text)
+        
+        chunks = []
+        current_chunk_text = []
+        current_chunk_size = 0
+        chunk_start_idx = 0
+        
+        for i, para in enumerate(paragraphs):
+            para = para.strip()
+            if not para:
+                continue
+                
+            para_size = len(para)
+            
+            # If single paragraph exceeds MAX_CHUNK_SIZE, split it
+            if para_size > MAX_CHUNK_SIZE:
+                # Save current chunk if exists
+                if current_chunk_text:
+                    chunk_text = '\n\n'.join(current_chunk_text)
+                    chunks.append(self._create_chunk(chunk_text, len(chunks), chunk_start_idx, i-1))
+                    current_chunk_text = []
+                    current_chunk_size = 0
+                
+                # Split large paragraph into smaller chunks
+                sub_chunks = self._split_large_paragraph(para, i)
+                chunks.extend(sub_chunks)
+                chunk_start_idx = i + 1
+                
+            # If adding this paragraph would exceed MAX_CHUNK_SIZE, save current chunk
+            elif current_chunk_size + para_size > MAX_CHUNK_SIZE and current_chunk_text:
+                chunk_text = '\n\n'.join(current_chunk_text)
+                chunks.append(self._create_chunk(chunk_text, len(chunks), chunk_start_idx, i-1))
+                
+                # Start new chunk with overlap
+                if CHUNK_OVERLAP > 0 and current_chunk_text:
+                    # Keep last paragraph for overlap
+                    overlap_text = current_chunk_text[-1]
+                    current_chunk_text = [overlap_text, para]
+                    current_chunk_size = len(overlap_text) + para_size
+                else:
+                    current_chunk_text = [para]
+                    current_chunk_size = para_size
+                chunk_start_idx = i
+                
+            # Add paragraph to current chunk
+            else:
+                current_chunk_text.append(para)
+                current_chunk_size += para_size
+        
+        # Add final chunk
+        if current_chunk_text:
+            chunk_text = '\n\n'.join(current_chunk_text)
+            if len(chunk_text) >= MIN_CHUNK_SIZE:
+                chunks.append(self._create_chunk(chunk_text, len(chunks), chunk_start_idx, len(paragraphs)-1))
+        
+        return chunks
+
+    def _fixed_chunking(self, text: str) -> List[Chunk]:
+        """
+        Fixed-size chunking: Traditional character-based splitting with overlap.
+        Best for: Consistent chunk sizes, simple implementation.
+        
+        Args:
+            text: Cleaned text
+            
+        Returns:
+            List of chunks
+        """
+        self.logger.info("Using fixed chunking strategy")
+        
+        chunks = []
+        text_length = len(text)
+        start = 0
+        chunk_idx = 0
+        
+        while start < text_length:
+            # Extract chunk
+            end = min(start + CHUNK_SIZE, text_length)
+            chunk_text = text[start:end].strip()
+            
+            if chunk_text and len(chunk_text) >= MIN_CHUNK_SIZE:
+                chunks.append(self._create_chunk(chunk_text, chunk_idx, start, end))
+                chunk_idx += 1
+            
+            # Move to next chunk with overlap
+            start = end - CHUNK_OVERLAP
+            
+            # Prevent infinite loop
+            if end >= text_length:
+                break
+        
+        return chunks
+
+    def _hybrid_chunking(self, text: str) -> List[Chunk]:
+        """
+        Hybrid chunking: Combines section boundaries with size constraints.
+        Best for: Structured documents like SUT with section headers.
+        
+        Args:
+            text: Cleaned text
+            
+        Returns:
+            List of chunks
+        """
+        self.logger.info("Using hybrid chunking strategy")
+        
+        lines = text.split('\n')
+        section_chunks = self._chunk_by_sections(lines)
+        
+        chunks = []
+        for i, (chunk_text, start_line, end_line) in enumerate(section_chunks):
+            chunks.append(self._create_chunk(chunk_text, i, start_line, end_line))
+        
+        return chunks
+
+    def _split_large_paragraph(self, paragraph: str, para_idx: int) -> List[Chunk]:
+        """
+        Split a large paragraph into smaller chunks by sentences.
+        
+        Args:
+            paragraph: Large paragraph text
+            para_idx: Paragraph index
+            
+        Returns:
+            List of chunks
+        """
+        # Split by sentences (Turkish sentence endings)
+        sentences = re.split(r'([.!?]\s+)', paragraph)
+        
+        chunks = []
+        current_text = []
+        current_size = 0
+        
+        for i in range(0, len(sentences), 2):
+            sentence = sentences[i]
+            separator = sentences[i+1] if i+1 < len(sentences) else ""
+            sentence_full = sentence + separator
+            sentence_size = len(sentence_full)
+            
+            if current_size + sentence_size > CHUNK_SIZE and current_text:
+                chunk_text = ''.join(current_text)
+                chunks.append(self._create_chunk(chunk_text, len(chunks), para_idx, para_idx))
+                
+                # Overlap: keep last sentence
+                if CHUNK_OVERLAP > 0:
+                    current_text = [current_text[-1], sentence_full]
+                    current_size = len(current_text[-1]) + sentence_size
+                else:
+                    current_text = [sentence_full]
+                    current_size = sentence_size
+            else:
+                current_text.append(sentence_full)
+                current_size += sentence_size
+        
+        if current_text:
+            chunk_text = ''.join(current_text)
+            chunks.append(self._create_chunk(chunk_text, len(chunks), para_idx, para_idx))
+        
+        return chunks
+
+    def _create_chunk(self, text: str, idx: int, start_ref: int, end_ref: int) -> Chunk:
+        """
+        Create a chunk object with metadata.
+        
+        Args:
+            text: Chunk text
+            idx: Chunk index
+            start_ref: Start reference (line or paragraph index)
+            end_ref: End reference
+            
+        Returns:
+            Chunk object
+        """
+        chunk_id = f"sut_chunk_{idx:04d}"
+        metadata = self._enrich_metadata(text, start_ref, end_ref)
+        
+        return Chunk(
+            chunk_id=chunk_id,
+            content=text,
+            metadata=metadata,
+            start_line=start_ref,
+            end_line=end_ref
+        )
 
     def _chunk_by_sections(self, lines: List[str]) -> List[tuple[str, int, int]]:
         """

@@ -6,7 +6,6 @@ import hashlib
 import pickle
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
-import concurrent.futures
 
 from openai import OpenAI
 
@@ -14,7 +13,7 @@ from rag.faiss_store import FAISSVectorStore
 from document_processing.embeddings import EmbeddingGenerator
 from models.report import Drug, Diagnosis, PatientInfo
 from models.eligibility import RetrievedChunk, Chunk
-from config.settings import EMBEDDING_PROVIDER, EMBEDDING_MODEL
+from config.settings import EMBEDDING_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -46,21 +45,6 @@ class EmbeddingCache:
                 pickle.dump(embedding, f)
         except Exception:
             pass  # Fail silently for cache writes
-"""RAG retrieval engine for SUT document search."""
-
-import time
-import logging
-from typing import List, Dict, Any, Optional, Tuple
-
-from openai import OpenAI
-
-from rag.faiss_store import FAISSVectorStore
-from document_processing.embeddings import EmbeddingGenerator
-from models.report import Drug, Diagnosis, PatientInfo
-from models.eligibility import RetrievedChunk, Chunk
-from config.settings import EMBEDDING_PROVIDER, EMBEDDING_MODEL
-
-logger = logging.getLogger(__name__)
 
 
 class RAGRetriever:
@@ -69,12 +53,11 @@ class RAGRetriever:
     def __init__(
         self,
         vector_store: FAISSVectorStore,
-        openai_client: Optional[OpenAI] = None,
-        provider: str = EMBEDDING_PROVIDER
+        openai_client: Optional[OpenAI] = None
     ):
         self.vector_store = vector_store
         self.client = openai_client
-        self.embedding_generator = EmbeddingGenerator(client=openai_client, provider=provider)
+        self.embedding_generator = EmbeddingGenerator(client=openai_client)
         self.embedding_cache = EmbeddingCache()
         self.logger = logging.getLogger(self.__class__.__name__)
 
@@ -354,28 +337,18 @@ class RAGRetriever:
 
             # Create embeddings for uncached queries
             if uncached_queries:
-                if self.embedding_generator.provider == "openai":
-                    # Use OpenAI batch API
-                    self.logger.info(f"Creating batch embeddings for {len(uncached_queries)} uncached queries (OpenAI)")
-                    response = self.client.embeddings.create(
-                        model=EMBEDDING_MODEL,
-                        input=uncached_queries,
-                        encoding_format="float"
-                    )
-                    new_embeddings = [item.embedding for item in response.data]
+                # Use OpenAI batch API (much faster than sequential)
+                self.logger.info(f"Creating batch embeddings for {len(uncached_queries)} uncached queries")
+                response = self.client.embeddings.create(
+                    model=EMBEDDING_MODEL,
+                    input=uncached_queries,
+                    encoding_format="float"
+                )
+                new_embeddings = [item.embedding for item in response.data]
 
-                    # Cache new embeddings
-                    for query, embedding in zip(uncached_queries, new_embeddings):
-                        self.embedding_cache.set(query, embedding)
-
-                else:
-                    # Parallel processing for Ollama/other providers
-                    self.logger.info(f"Creating parallel embeddings for {len(uncached_queries)} uncached queries")
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(uncached_queries))) as executor:
-                        future_to_query = {executor.submit(self._create_query_embedding, q): q for q in uncached_queries}
-                        new_embeddings = []
-                        for future in concurrent.futures.as_completed(future_to_query):
-                            new_embeddings.append(future.result())
+                # Cache new embeddings
+                for query, embedding in zip(uncached_queries, new_embeddings):
+                    self.embedding_cache.set(query, embedding)
 
                 # Reconstruct full embeddings list
                 embeddings = [None] * len(queries)

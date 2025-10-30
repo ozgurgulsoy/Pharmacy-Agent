@@ -71,46 +71,30 @@ Eğer bir bilgi bulunamazsa null kullan.
 """
 
 # Optimized System Prompt for Speed
-SYSTEM_PROMPT = """Sen SGK/SUT uzmanısın. İlaç uygunluğunu hızlı değerlendir.
+SYSTEM_PROMPT = """SGK/SUT uzmanısın. İlaç uygunluğunu değerlendir.
 
-KURALLAR:
-- ELIGIBLE: Tüm SUT koşulları karşılandı
-- CONDITIONAL: Bilgi eksik veya şüpheli
-- NOT_ELIGIBLE: SUT koşulları karşılanmadı
+ELIGIBLE: SUT koşulları karşılandı
+CONDITIONAL: Bilgi eksik/şüpheli
+NOT_ELIGIBLE: SUT koşulları karşılanmadı
 
-JSON formatında yanıt ver:
-{
-  "drug_name": "İlaç adı",
-  "status": "ELIGIBLE|NOT_ELIGIBLE|CONDITIONAL",
-  "confidence": 0.0-1.0,
-  "sut_reference": "SUT referansı",
-  "conditions": [
-    {
-      "description": "Koşul",
-      "is_met": true/false/null,
-      "required_info": "Eksik bilgi"
-    }
-  ],
-  "explanation": "Kısa açıklama",
-  "warnings": ["Uyarılar"]
-}"""
+JSON:
+{"drug_name": "...", "status": "ELIGIBLE|NOT_ELIGIBLE|CONDITIONAL", "confidence": 0.0-1.0, "sut_reference": "...", "conditions": [{"description": "...", "is_met": true/false/null, "required_info": "..."}], "explanation": "...", "warnings": [...]}"""
 
 # Eligibility Check System Prompt
 ELIGIBILITY_SYSTEM_PROMPT = SYSTEM_PROMPT  # Backward compatibility
 
 
 # Optimized User Prompt Template for Speed
-USER_PROMPT_TEMPLATE = """HASTA RAPORU:
-İlaç: {drug_name}
+USER_PROMPT_TEMPLATE = """İlaç: {drug_name}
 Tanı: {diagnosis_name} ({icd_code})
-Hasta: {patient_age} yaş, {patient_gender}
-Doktor: {doctor_name} ({doctor_specialty})
+Hasta: {patient_age}y, {patient_gender}
+Doktor: {doctor_specialty}
 {explanations}
 
-SUT KURALLARI:
+SUT:
 {sut_chunks}
 
-{drug_name} ilacının SGK kapsamını değerlendir. JSON yanıt ver."""
+SGK uygunluğu? JSON:"""
 
 
 class PromptBuilder:
@@ -171,20 +155,20 @@ class PromptBuilder:
     def _format_sut_chunks(chunks: List[Dict[str, Any]]) -> str:
         """SUT chunk'larını okunabilir formata çevirir."""
         if not chunks:
-            return "İlgili SUT bölümü bulunamadı."
+            return "Bulunamadı"
 
         formatted_chunks = []
 
-        for i, chunk in enumerate(chunks[:3], 1):  # Limit to top 3 chunks for speed
+        for i, chunk in enumerate(chunks[:3], 1):  # Top 3 only
             metadata = chunk.get('metadata', {})
             content = metadata.get('content', '')
-            section = metadata.get('section', 'Bilinmiyor')
+            section = metadata.get('section', '?')
 
-            # Shorten content for speed
-            if len(content) > 500:
-                content = content[:500] + "..."
+            # Shorten aggressively for speed
+            if len(content) > 400:
+                content = content[:400] + "..."
 
-            chunk_text = f"SUT {section}: {content}"
+            chunk_text = f"{section}: {content}"
             formatted_chunks.append(chunk_text.strip())
 
         return "\n".join(formatted_chunks)

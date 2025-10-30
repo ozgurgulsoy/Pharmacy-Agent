@@ -248,43 +248,21 @@ class InputParser:
             }
         """
         try:
-            system_prompt = """Sen bir tıbbi rapor analiz asistanısın. Rapor metninden tüm bilgileri TEK SEFERDE çıkar.
+            system_prompt = """Tıbbi rapor analiz: İlaçlar, tanılar, hasta bilgilerini çıkar.
 
-JSON formatında döndür:
+JSON:
 {
-  "drugs": [
-    {
-      "kod": "SGKF09",
-      "etkin_madde": "KLOPİDOGREL HİDROJEN SÜLFAT",
-      "form": "Ağızdan katı",
-      "tedavi_sema": "Günde 1 x 1.0 Adet",
-      "miktar": 1,
-      "eklenme_zamani": "26/12/2024"
-    }
-  ],
-  "diagnoses": [
-    {
-      "icd10_code": "I25.1",
-      "tanim": "ATEROSKLEROTİK KALP HASTALIĞI",
-      "baslangic": "26/12/2024",
-      "bitis": "25/12/2025"
-    }
-  ],
-  "patient": {
-    "cinsiyet": "Erkek",
-    "dogum_tarihi": "12/04/1954",
-    "yas": 71
-  }
+  "drugs": [{"kod": "SGK...", "etkin_madde": "...", "form": "...", "tedavi_sema": "...", "miktar": 1, "eklenme_zamani": "DD/MM/YYYY"}],
+  "diagnoses": [{"icd10_code": "...", "tanim": "...", "baslangic": "DD/MM/YYYY", "bitis": "DD/MM/YYYY"}],
+  "patient": {"cinsiyet": "Erkek/Kadın", "dogum_tarihi": "DD/MM/YYYY", "yas": number}
 }
+Eksik: "UNKNOWN" veya null"""
 
-ÖNEMLİ: TC Kimlik numarası gibi kişisel bilgileri ÇIKARMA!
-Eksik bilgiler için "UNKNOWN" veya null kullan."""
-
-            user_prompt = f"""Aşağıdaki rapor metninden TÜM bilgileri çıkar:
+            user_prompt = f"""Rapor:
 
 {text}
 
-Sadece JSON formatında yanıt ver."""
+JSON yanıt:"""
 
             response_text = self.openai_client.chat_completion(
                 system_prompt=system_prompt,

@@ -1,68 +1,30 @@
-"""Embeddings generation utilities supporting multiple providers."""
+"""Embeddings generation utilities using OpenAI."""
 
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 from openai import OpenAI
-try:
-    import ollama
-except Exception:
-    ollama = None
 
 from models.eligibility import Chunk
-from config.settings import (
-    EMBEDDING_MODEL, 
-    EMBEDDING_PROVIDER,
-    EMBEDDING_DIMENSION,
-    OLLAMA_HOST
-)
+from config.settings import EMBEDDING_MODEL, EMBEDDING_DIMENSION
 
 logger = logging.getLogger(__name__)
 
 
 class EmbeddingGenerator:
-    """Embeddings generator supporting multiple providers (OpenAI, Ollama)."""
+    """Embeddings generator using OpenAI."""
 
-    def __init__(self, client: Optional[OpenAI] = None, provider: str = EMBEDDING_PROVIDER):
+    def __init__(self, client: OpenAI):
         """
         Initialize the embedding generator.
         
         Args:
-            client: OpenAI client (required if provider is "openai")
-            provider: Embedding provider ("openai" or "ollama")
+            client: OpenAI client
         """
         self.client = client
-        self.provider = provider
         self.logger = logging.getLogger(self.__class__.__name__)
-        
-        if self.provider == "ollama":
-            self.logger.info(f"Using Ollama embeddings with model: {EMBEDDING_MODEL}")
-            self.logger.info(f"Embedding dimension: {EMBEDDING_DIMENSION}")
-        elif self.provider == "openai":
-            if not self.client:
-                raise ValueError("OpenAI client is required when using OpenAI provider")
-            self.logger.info(f"Using OpenAI embeddings with model: {EMBEDDING_MODEL}")
+        self.logger.info(f"Using OpenAI embeddings with model: {EMBEDDING_MODEL}")
     
-    def _create_ollama_embedding(self, text: str) -> List[float]:
-        """
-        Create embedding using Ollama.
-        
-        Args:
-            text: Text to embed
-            
-        Returns:
-            Embedding vector
-        """
-        try:
-            response = ollama.embeddings(
-                model=EMBEDDING_MODEL,
-                prompt=text
-            )
-            return response["embedding"]
-        except Exception as e:
-            self.logger.error(f"Error creating Ollama embedding: {e}")
-            raise
-    
-    def _create_openai_embedding(self, text: str) -> List[float]:
+    def _create_embedding(self, text: str) -> List[float]:
         """
         Create embedding using OpenAI.
         
@@ -93,17 +55,14 @@ class EmbeddingGenerator:
         Returns:
             Embedding verileri listesi
         """
-        self.logger.info(f"Creating embeddings for {len(chunks)} chunks using {self.provider}")
+        self.logger.info(f"Creating embeddings for {len(chunks)} chunks")
 
         embeddings_data = []
 
         for i, chunk in enumerate(chunks):
             try:
                 # Embedding oluştur
-                if self.provider == "ollama":
-                    embedding = self._create_ollama_embedding(chunk.content)
-                else:  # openai
-                    embedding = self._create_openai_embedding(chunk.content)
+                embedding = self._create_embedding(chunk.content)
 
                 # FAISS formatında veri hazırla
                 embedding_data = {
@@ -144,12 +103,4 @@ class EmbeddingGenerator:
         Returns:
             Embedding vektörü
         """
-        try:
-            if self.provider == "ollama":
-                return self._create_ollama_embedding(query)
-            else:  # openai
-                return self._create_openai_embedding(query)
-
-        except Exception as e:
-            self.logger.error(f"Error creating query embedding: {e}")
-            raise
+        return self._create_embedding(query)
