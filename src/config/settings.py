@@ -12,13 +12,20 @@ OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
 
 # Model Settings
 EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-3.5-turbo")  # Faster than gpt-4o-mini
+LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-4o-mini")  # Latest fast model
+MAX_TOKENS: int = int(os.getenv("MAX_TOKENS", "4096"))  # Limit response length
+TEMPERATURE: float = float(os.getenv("TEMPERATURE", "0.1"))  # Lower = faster, more deterministic
 
 # Chunk Settings - Optimized for SUT regulatory documents with hierarchical structure
 # Note: text-embedding-3-small supports up to 8191 tokens, so we have plenty of room
 CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "2048"))  # ~512 tokens - captures complete subsections with context
 CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "256"))  # ~64 tokens (12.5%) - prevents context fragmentation
-TOP_K_CHUNKS: int = int(os.getenv("TOP_K_CHUNKS", "3"))  # Reduced from 5 to 3 for speed
+TOP_K_CHUNKS: int = int(os.getenv("TOP_K_CHUNKS", "5"))  # Reduced to 5 for optimal balance
+
+# Performance Settings
+ENABLE_STREAMING: bool = os.getenv("ENABLE_STREAMING", "true").lower() == "true"
+PARALLEL_EMBEDDINGS: bool = os.getenv("PARALLEL_EMBEDDINGS", "true").lower() == "true"
+CACHE_EMBEDDINGS: bool = os.getenv("CACHE_EMBEDDINGS", "true").lower() == "true"
 
 # Chunking Strategy - can be "semantic", "fixed", or "hybrid"
 CHUNKING_STRATEGY: str = os.getenv("CHUNKING_STRATEGY", "semantic")

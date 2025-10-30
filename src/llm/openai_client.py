@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any
 import json
 
 from openai import OpenAI
-from config.settings import OPENAI_API_KEY, LLM_MODEL
+from config.settings import OPENAI_API_KEY, LLM_MODEL, MAX_TOKENS, TEMPERATURE
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +15,14 @@ class OpenAIClientWrapper:
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or OPENAI_API_KEY
-        self.client = OpenAI(api_key=self.api_key)
+        self.client = OpenAI(
+            api_key=self.api_key,
+            timeout=60.0,  # Explicit timeout
+            max_retries=2  # Reduce retries for faster failures
+        )
         self.model = LLM_MODEL
+        self.max_tokens = MAX_TOKENS
+        self.temperature = TEMPERATURE
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def chat_completion(
@@ -47,6 +53,8 @@ class OpenAIClientWrapper:
             kwargs = {
                 "model": self.model,
                 "messages": messages,
+                "temperature": self.temperature,
+                "max_tokens": self.max_tokens,
             }
 
             if response_format:
