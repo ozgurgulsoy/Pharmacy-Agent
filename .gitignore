@@ -21,15 +21,23 @@ wheels/
 *.egg
 MANIFEST
 
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv/
+
 # Environment variables
 .env
 .env.local
+.env.*.local
 
 # IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+.kilocodeignore
 
 # OS
 .DS_Store
@@ -39,7 +47,10 @@ Thumbs.db
 *.log
 logs/
 
-# Data
+# Data - FAISS indices and caches
+data/faiss_index
+data/faiss_metadata.json
+data/embedding_cache/
 data/*.txt
 data/*.json
 !data/sample_reports/
@@ -47,3 +58,12 @@ data/*.json
 # Temporary files
 *.tmp
 *.temp
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
