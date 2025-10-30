@@ -19,7 +19,7 @@ fi
 # Check current model configuration
 echo "📋 Current Configuration:"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-grep "LLM_MODEL=" .env || echo "LLM_MODEL not set (will use default: gpt-5-nano ❌)"
+grep "LLM_MODEL=" .env || echo "LLM_MODEL not set (will use default: gpt-5-mini ❌)"
 grep "EMBEDDING_PROVIDER=" .env || echo "EMBEDDING_PROVIDER not set (will use default: ollama)"
 grep "EMBEDDING_MODEL=" .env || echo "EMBEDDING_MODEL not set"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

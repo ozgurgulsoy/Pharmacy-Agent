@@ -2,6 +2,54 @@
 
 import time
 import logging
+import hashlib
+import pickle
+from pathlib import Path
+from typing import List, Dict, Any, Optional, Tuple
+import concurrent.futures
+
+from openai import OpenAI
+
+from rag.faiss_store import FAISSVectorStore
+from document_processing.embeddings import EmbeddingGenerator
+from models.report import Drug, Diagnosis, PatientInfo
+from models.eligibility import RetrievedChunk, Chunk
+from config.settings import EMBEDDING_PROVIDER, EMBEDDING_MODEL
+
+logger = logging.getLogger(__name__)
+
+
+class EmbeddingCache:
+    """Cache for query embeddings to avoid recomputation."""
+
+    def __init__(self, cache_dir: str = "data/embedding_cache"):
+        self.cache_dir = Path(cache_dir)
+        self.cache_dir.mkdir(exist_ok=True)
+
+    def get_cache_key(self, text: str) -> str:
+        return hashlib.md5(text.encode()).hexdigest()
+
+    def get(self, text: str) -> Optional[List[float]]:
+        cache_file = self.cache_dir / f"{self.get_cache_key(text)}.pkl"
+        if cache_file.exists():
+            try:
+                with open(cache_file, 'rb') as f:
+                    return pickle.load(f)
+            except Exception:
+                return None
+        return None
+
+    def set(self, text: str, embedding: List[float]):
+        cache_file = self.cache_dir / f"{self.get_cache_key(text)}.pkl"
+        try:
+            with open(cache_file, 'wb') as f:
+                pickle.dump(embedding, f)
+        except Exception:
+            pass  # Fail silently for cache writes
+"""RAG retrieval engine for SUT document search."""
+
+import time
+import logging
 from typing import List, Dict, Any, Optional, Tuple
 
 from openai import OpenAI
@@ -19,14 +67,15 @@ class RAGRetriever:
     """SUT dokümanından ilgili chunk'ları bulan retriever."""
 
     def __init__(
-        self, 
-        vector_store: FAISSVectorStore, 
+        self,
+        vector_store: FAISSVectorStore,
         openai_client: Optional[OpenAI] = None,
         provider: str = EMBEDDING_PROVIDER
     ):
         self.vector_store = vector_store
         self.client = openai_client
         self.embedding_generator = EmbeddingGenerator(client=openai_client, provider=provider)
+        self.embedding_cache = EmbeddingCache()
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def retrieve_relevant_chunks(
@@ -119,9 +168,21 @@ class RAGRetriever:
         return " | ".join(query_parts)
 
     def _create_query_embedding(self, query_text: str) -> List[float]:
-        """Query için embedding oluşturur."""
+        """Query için embedding oluşturur (with caching)."""
         try:
-            return self.embedding_generator.create_query_embedding(query_text)
+            # Check cache first
+            cached_embedding = self.embedding_cache.get(query_text)
+            if cached_embedding is not None:
+                self.logger.debug(f"Using cached embedding for query: {query_text[:50]}...")
+                return cached_embedding
+
+            # Create new embedding
+            embedding = self.embedding_generator.create_query_embedding(query_text)
+
+            # Cache the result
+            self.embedding_cache.set(query_text, embedding)
+
+            return embedding
 
         except Exception as e:
             self.logger.error(f"Error creating query embedding: {e}")
@@ -273,30 +334,63 @@ class RAGRetriever:
             query_metadata.append({"drug": drug, "query": q})
         query_build_time = (time.time() - query_build_start) * 1000
 
-        # 2) Create embeddings in batch if provider supports batching (OpenAI supports batching)
+        # 2) Create embeddings in batch with caching and parallel processing
         embedding_start = time.time()
         embeddings: List[List[float]] = []
 
         try:
-            if self.embedding_generator.provider == "openai":
-                # Use the underlying OpenAI client to create batch embeddings
-                self.logger.info(f"Creating batch embeddings for {len(queries)} queries (OpenAI)")
-                response = self.client.embeddings.create(
-                    model=EMBEDDING_MODEL,
-                    input=queries,
-                    encoding_format="float"
-                )
-                embeddings = [item.embedding for item in response.data]
+            # Check cache for all queries first
+            cached_embeddings = []
+            uncached_queries = []
+            uncached_indices = []
+
+            for i, query in enumerate(queries):
+                cached = self.embedding_cache.get(query)
+                if cached is not None:
+                    cached_embeddings.append((i, cached))
+                else:
+                    uncached_queries.append(query)
+                    uncached_indices.append(i)
+
+            # Create embeddings for uncached queries
+            if uncached_queries:
+                if self.embedding_generator.provider == "openai":
+                    # Use OpenAI batch API
+                    self.logger.info(f"Creating batch embeddings for {len(uncached_queries)} uncached queries (OpenAI)")
+                    response = self.client.embeddings.create(
+                        model=EMBEDDING_MODEL,
+                        input=uncached_queries,
+                        encoding_format="float"
+                    )
+                    new_embeddings = [item.embedding for item in response.data]
+
+                    # Cache new embeddings
+                    for query, embedding in zip(uncached_queries, new_embeddings):
+                        self.embedding_cache.set(query, embedding)
+
+                else:
+                    # Parallel processing for Ollama/other providers
+                    self.logger.info(f"Creating parallel embeddings for {len(uncached_queries)} uncached queries")
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(uncached_queries))) as executor:
+                        future_to_query = {executor.submit(self._create_query_embedding, q): q for q in uncached_queries}
+                        new_embeddings = []
+                        for future in concurrent.futures.as_completed(future_to_query):
+                            new_embeddings.append(future.result())
+
+                # Reconstruct full embeddings list
+                embeddings = [None] * len(queries)
+                for i, emb in cached_embeddings:
+                    embeddings[i] = emb
+                for i, emb in zip(uncached_indices, new_embeddings):
+                    embeddings[i] = emb
             else:
-                # Ollama or other: create sequentially
-                self.logger.info(f"Creating embeddings sequentially for {len(queries)} queries (provider={self.embedding_generator.provider})")
-                embeddings = [self.embedding_generator.create_query_embedding(q) for q in queries]
+                # All from cache
+                embeddings = [emb for _, emb in cached_embeddings]
 
         except Exception as e:
-            # If batch creation fails, fall back to per-query creation and log
-            self.logger.error(f"Batch embedding creation failed: {e}, falling back to sequential embeddings")
-            self.logger.exception(e)
-            embeddings = [self.embedding_generator.create_query_embedding(q) for q in queries]
+            # Fallback to sequential processing
+            self.logger.error(f"Batch embedding creation failed: {e}, falling back to sequential")
+            embeddings = [self._create_query_embedding(q) for q in queries]
 
         embedding_time = (time.time() - embedding_start) * 1000
 

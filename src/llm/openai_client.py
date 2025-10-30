@@ -104,7 +104,7 @@ class OpenAIClientWrapper:
             # Fallback: Metni JSON'a dönüştürmeye çalış
             return {"raw_response": response_text, "parse_error": str(e)}
 
-    def create_embedding(self, text: str, model: str = "gpt-5-nano") -> list:
+    def create_embedding(self, text: str, model: str = "gpt-5-mini") -> list:
         """
         Metin için embedding oluşturur.
 

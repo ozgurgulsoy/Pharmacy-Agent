@@ -14,6 +14,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.markdown import Markdown
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeRemainingColumn
 from rich import print as rprint
 
 from openai import OpenAI
@@ -116,50 +117,63 @@ class PharmacyCLI:
             total_start = time.time()
             timings = {}
 
-            # 1. Parse report
-            self.console.print("\n[cyan]📋 Rapor analiz ediliyor...[/cyan]")
-            parse_start = time.time()
-            parsed_report = self.parser.parse_report(report_text)
-            timings['parsing'] = (time.time() - parse_start) * 1000
-            
-            self.show_report_info(parsed_report)
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TimeRemainingColumn(),
+                console=self.console,
+                transient=False
+            ) as progress:
 
-            # 2. Her ilaç için RAG retrieval
-            self.console.print("\n[cyan]🔍 SUT dokümanında arama yapılıyor...[/cyan]")
-            retrieval_start = time.time()
-            sut_chunks_per_drug, retrieval_timings = self.retriever.retrieve_for_multiple_drugs(
-                drugs=parsed_report.drugs,
-                diagnosis=parsed_report.diagnoses[0] if parsed_report.diagnoses else None,
-                patient=parsed_report.patient,
-                top_k_per_drug=5
-            )
-            timings['retrieval'] = (time.time() - retrieval_start) * 1000
-            timings['retrieval_per_drug'] = timings['retrieval'] / len(parsed_report.drugs) if parsed_report.drugs else 0
-            
-            # Add detailed retrieval breakdown
-            if retrieval_timings:
-                timings['retrieval_breakdown'] = retrieval_timings
+                # 1. Parse report
+                parse_task = progress.add_task("📋 Rapor analiz ediliyor...", total=None)
+                parse_start = time.time()
+                parsed_report = self.parser.parse_report(report_text)
+                timings['parsing'] = (time.time() - parse_start) * 1000
+                progress.update(parse_task, completed=True)
 
-            # 3. Her ilaç için eligibility check
-            self.console.print("\n[cyan]💊 İlaçlar değerlendiriliyor...[/cyan]\n")
-            eligibility_start = time.time()
-            results = self.eligibility_checker.check_multiple_drugs(
-                drugs=parsed_report.drugs,
-                diagnoses=parsed_report.diagnoses,
-                patient=parsed_report.patient,
-                doctor=parsed_report.doctor,
-                sut_chunks_per_drug=sut_chunks_per_drug,
-                explanations=parsed_report.explanations
-            )
-            timings['eligibility_check'] = (time.time() - eligibility_start) * 1000
-            timings['eligibility_per_drug'] = timings['eligibility_check'] / len(parsed_report.drugs) if parsed_report.drugs else 0
+                self.show_report_info(parsed_report)
+
+                # 2. Her ilaç için RAG retrieval
+                retrieval_task = progress.add_task("🔍 SUT dokümanında arama yapılıyor...", total=len(parsed_report.drugs))
+                retrieval_start = time.time()
+                sut_chunks_per_drug, retrieval_timings = self.retriever.retrieve_for_multiple_drugs(
+                    drugs=parsed_report.drugs,
+                    diagnosis=parsed_report.diagnoses[0] if parsed_report.diagnoses else None,
+                    patient=parsed_report.patient,
+                    top_k_per_drug=5
+                )
+                timings['retrieval'] = (time.time() - retrieval_start) * 1000
+                timings['retrieval_per_drug'] = timings['retrieval'] / len(parsed_report.drugs) if parsed_report.drugs else 0
+                progress.update(retrieval_task, completed=len(parsed_report.drugs))
+
+                # Add detailed retrieval breakdown
+                if retrieval_timings:
+                    timings['retrieval_breakdown'] = retrieval_timings
+
+                # 3. Her ilaç için eligibility check
+                eligibility_task = progress.add_task("💊 İlaçlar değerlendiriliyor...", total=len(parsed_report.drugs))
+                eligibility_start = time.time()
+                results = self.eligibility_checker.check_multiple_drugs(
+                    drugs=parsed_report.drugs,
+                    diagnoses=parsed_report.diagnoses,
+                    patient=parsed_report.patient,
+                    doctor=parsed_report.doctor,
+                    sut_chunks_per_drug=sut_chunks_per_drug,
+                    explanations=parsed_report.explanations
+                )
+                timings['eligibility_check'] = (time.time() - eligibility_start) * 1000
+                timings['eligibility_per_drug'] = timings['eligibility_check'] / len(parsed_report.drugs) if parsed_report.drugs else 0
+                progress.update(eligibility_task, completed=len(parsed_report.drugs))
 
             # Total time
             timings['total'] = (time.time() - total_start) * 1000
 
             # 4. Sonuçları göster
             self.show_results(results)
-            
+
             # 5. Performance metrics
             self.show_performance_metrics(timings, len(parsed_report.drugs))
 

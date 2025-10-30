@@ -14,10 +14,10 @@ OPENAI_API_KEY: Optional[str] = os.getenv("OPENAI_API_KEY")
 OLLAMA_HOST: str = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
 # Model Settings
-EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "qwen3-embedding:8b")
-EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "ollama")  # "ollama" or "openai"
+EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "openai")  # "ollama" or "openai"
 
-LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-5-nano")
+LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-4o-mini")
 
 # Chunk Settings - Optimized for SUT regulatory documents with hierarchical structure
 CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "1000"))  # ~200 tokens - captures complete subsections
@@ -28,7 +28,7 @@ TOP_K_CHUNKS: int = int(os.getenv("TOP_K_CHUNKS", "4"))
 OUTPUT_LANGUAGE: str = os.getenv("OUTPUT_LANGUAGE", "turkish")
 
 # FAISS Settings
-EMBEDDING_DIMENSION: int = int(os.getenv("EMBEDDING_DIMENSION", "4096"))  # qwen3-embedding:8b dimension
+EMBEDDING_DIMENSION: int = int(os.getenv("EMBEDDING_DIMENSION", "1536"))  # text-embedding-3-small dimension
 FAISS_INDEX_PATH: str = "data/faiss_index"
 FAISS_METADATA_PATH: str = "data/faiss_metadata.json"
 

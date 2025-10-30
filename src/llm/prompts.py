@@ -70,101 +70,47 @@ Eğer bir bilgi bulunamazsa null kullan.
 }
 """
 
-# System Prompt
-SYSTEM_PROMPT = """Sen bir Türk sağlık sistemi uzmanısın. SUT (Sağlık Uygulama Tebliği) dokümantasyonuna göre ilaçların SGK kapsamında olup olmadığını değerlendiriyorsun.
+# Optimized System Prompt for Speed
+SYSTEM_PROMPT = """Sen SGK/SUT uzmanısın. İlaç uygunluğunu hızlı değerlendir.
 
-Görevin:
-1. Verilen hasta raporu ve ilgili SUT bölümlerini dikkatlice analiz et
-2. Her ilaç için uygunluk kriterlerini kontrol et
-3. Detaylı ve anlaşılır Türkçe açıklama yap
+KURALLAR:
+- ELIGIBLE: Tüm SUT koşulları karşılandı
+- CONDITIONAL: Bilgi eksik veya şüpheli
+- NOT_ELIGIBLE: SUT koşulları karşılanmadı
 
-ÖNEMLI KURALLAR:
-- Sadece SUT'ta yazanları ölçü olarak kullan
-- **RAPOR AÇIKLAMALARI bölümündeki klinik değerler (LDL, statin kullanım süresi, tansiyon vb.) doğrudan SUT kriterlerini karşılamak için kullanılmalıdır**
-- SUT'taki her bir koşulu (örn: "LDL > 100 mg/dL", "en az 6 ay statin") rapordaki açıklamalarla BİREBİR KARŞILAŞTIR
-- Rapor açıklamalarında açıkça belirtilen kriterleri "eksik bilgi" olarak değerlendirme
-- Emin olmadığın durumlarda "CONDITIONAL" (Koşullu) sonucu ver
-- Eksik bilgi varsa açıkça belirt
-- Hasta güvenliği önceliklidir - şüpheli durumlarda "Doktora danışın" öner
-
-Çıktı Formatı (JSON):
-{{
+JSON formatında yanıt ver:
+{
   "drug_name": "İlaç adı",
-  "status": "ELIGIBLE | NOT_ELIGIBLE | CONDITIONAL",
+  "status": "ELIGIBLE|NOT_ELIGIBLE|CONDITIONAL",
   "confidence": 0.0-1.0,
-  "sut_reference": "Madde numarası ve satır aralığı",
+  "sut_reference": "SUT referansı",
   "conditions": [
-    {{
-      "description": "Koşul açıklaması",
+    {
+      "description": "Koşul",
       "is_met": true/false/null,
-      "required_info": "Eksik bilgi varsa ne gerekli"
-    }}
+      "required_info": "Eksik bilgi"
+    }
   ],
-  "explanation": "Türkçe açıklama",
-  "warnings": ["Uyarılar listesi"]
-}}
-
-Emoji Kullanımı:
-- ✅ Uygun (ELIGIBLE)
-- ❌ Uygun değil (NOT_ELIGIBLE)  
-- ⚠️ Koşullu (CONDITIONAL)
-- 💡 Öneri/Not
-"""
+  "explanation": "Kısa açıklama",
+  "warnings": ["Uyarılar"]
+}"""
 
 # Eligibility Check System Prompt
 ELIGIBILITY_SYSTEM_PROMPT = SYSTEM_PROMPT  # Backward compatibility
 
 
-# User Prompt Template
-USER_PROMPT_TEMPLATE = """
-## HASTA RAPORU
-
-**İlaç**: {drug_name}
-- Kod: {drug_code}
-- Form: {drug_form}
-- Tedavi Şeması: {drug_schema}
-
-**Tanı**: {diagnosis_name}
-- ICD-10 Kodu: {icd_code}
-
-**Hasta Bilgileri**:
-- Yaş: {patient_age}
-- Cinsiyet: {patient_gender}
-
-**Doktor**: {doctor_name} ({doctor_specialty})
+# Optimized User Prompt Template for Speed
+USER_PROMPT_TEMPLATE = """HASTA RAPORU:
+İlaç: {drug_name}
+Tanı: {diagnosis_name} ({icd_code})
+Hasta: {patient_age} yaş, {patient_gender}
+Doktor: {doctor_name} ({doctor_specialty})
 {explanations}
 
----
-
-## İLGİLİ SUT BÖLÜMLERİ
-
+SUT KURALLARI:
 {sut_chunks}
 
----
-
-## GÖREV
-
-Lütfen yukarıdaki bilgilere göre **{drug_name}** ilacının SGK kapsamında karşılanıp karşılanmayacağını değerlendir.
-
-**KRİTİK: Rapor Açıklamaları bölümündeki klinik değerleri SUT koşullarıyla DOĞRUDAN KARŞILAŞTIR**
-
-Değerlendirme adımları (sırayla):
-1. SUT'taki her bir koşulu belirle (örn: "LDL > 100 mg/dL", "en az 6 ay statin tedavisi")
-2. Her koşul için Rapor Açıklamaları'nda AYNEN karşılığını ara
-3. Açıklamada açıkça belirtilen değerleri (örn: "LDL: 126 mg/dl", "En az 6 ay statin") koşulun karşılandığı kanıtı olarak kullan
-4. Sadece raporda HİÇ bahsedilmeyen bilgileri "eksik" olarak işaretle
-
-Özellikle kontrol et:
-1. SUT'taki sayısal kriterler (LDL, tansiyon, süre vb.) rapordaki değerlerle eşleşiyor mu?
-2. SUT'taki süre koşulları (örn: "en az 6 ay") raporda belirtilmiş mi?
-3. Doktor branşı SUT'ta belirtilen yetkili branşlar arasında mı?
-4. Hasta yaşı veya diğer özellikler SUT'taki sınırlar içinde mi?
-5. Tanı SUT'taki endikasyonlarla uyumlu mu?
-
-**UNUTMA**: Rapor açıklamalarında açıkça yazılan her bilgi, o koşulun KARŞILANDIĞI anlamına gelir. Eksik bilgi sadece raporda HİÇ bahsedilmeyenlerdir.
-
-Yanıtını JSON formatında ver.
-"""
+{drug_name} ilacının SGK kapsamını değerlendir. JSON yanıt ver."""
 
 
 class PromptBuilder:
@@ -197,11 +143,11 @@ class PromptBuilder:
         """
         # SUT chunks'ı formatla
         sut_text = PromptBuilder._format_sut_chunks(sut_chunks)
-        
+
         # Açıklamalar kısmını ekle (varsa)
         explanations_text = ""
         if explanations:
-            explanations_text = f"\n\n**Rapor Açıklamaları (Önemli Klinik Bilgiler)**:\n{explanations}"
+            explanations_text = f"\nAçıklamalar: {explanations}"
 
         # Prompt template'i doldur
         prompt = USER_PROMPT_TEMPLATE.format(
@@ -225,30 +171,23 @@ class PromptBuilder:
     def _format_sut_chunks(chunks: List[Dict[str, Any]]) -> str:
         """SUT chunk'larını okunabilir formata çevirir."""
         if not chunks:
-            return "⚠️ İlgili SUT bölümü bulunamadı. Manuel kontrol gerekli."
+            return "İlgili SUT bölümü bulunamadı."
 
         formatted_chunks = []
-        
-        for i, chunk in enumerate(chunks, 1):
+
+        for i, chunk in enumerate(chunks[:3], 1):  # Limit to top 3 chunks for speed
             metadata = chunk.get('metadata', {})
             content = metadata.get('content', '')
             section = metadata.get('section', 'Bilinmiyor')
-            start_line = metadata.get('start_line', '?')
-            end_line = metadata.get('end_line', '?')
-            score = chunk.get('score', 0.0)
 
-            chunk_text = f"""
-### SUT Bölüm {i}
-**Madde**: {section} (Satır {start_line}-{end_line})
-**Eşleşme Skoru**: {score:.2f}
+            # Shorten content for speed
+            if len(content) > 500:
+                content = content[:500] + "..."
 
-{content}
-
----
-"""
+            chunk_text = f"SUT {section}: {content}"
             formatted_chunks.append(chunk_text.strip())
 
-        return "\n\n".join(formatted_chunks)
+        return "\n".join(formatted_chunks)
 
     @staticmethod
     def build_summary_prompt(eligibility_results: List[Dict[str, Any]]) -> str:
@@ -263,17 +202,17 @@ class PromptBuilder:
         """
         # Bu fonksiyon gelecekte CLI output için kullanılabilir
         summary = "## İLAÇ UYGUNLUK ÖZETİ\n\n"
-        
+
         for i, result in enumerate(eligibility_results, 1):
             drug_name = result.get('drug_name', 'Bilinmeyen ilaç')
             status = result.get('status', 'UNKNOWN')
-            
+
             emoji = {
                 'ELIGIBLE': '✅',
                 'NOT_ELIGIBLE': '❌',
                 'CONDITIONAL': '⚠️'
             }.get(status, '❓')
-            
+
             summary += f"{i}. {emoji} **{drug_name}** - {status}\n"
-        
+
         return summary
