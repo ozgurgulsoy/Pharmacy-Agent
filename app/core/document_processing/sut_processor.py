@@ -6,8 +6,8 @@ from typing import List, Dict, Any, Optional
 from .pdf_loader import PDFLoader
 from .chunker import SUTDocumentChunker
 from .embeddings import EmbeddingGenerator
-from models.eligibility import Chunk
-from config.settings import SUT_PDF_PATH, EMBEDDING_PROVIDER
+from app.models.eligibility import Chunk
+from app.config.settings import SUT_PDF_PATH, EMBEDDING_PROVIDER
 
 logger = logging.getLogger(__name__)
 

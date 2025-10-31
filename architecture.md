@@ -15,7 +15,7 @@ AI destekli bir ajan sistemi oluşturulacak:
 - **Çıktı**: Her ilaç için detaylı uygunluk analizi (Türkçe)
 
 ### 1.3 Teknoloji Stack
-- **LLM**: OpenAI GPT-4 / GPT-4-turbo
+- **LLM**: OpenAI GPT-5-mini
 - **Vector DB**: FAISS (Local, Fast, Accurate)
 - **Framework**: Python
 - **Interface**: CLI (MVP)
@@ -42,7 +42,7 @@ graph TB
     J --> K[FAISS Vector Store<br/>SUT Chunks]
     K -->|İlgili SUT bölümleri| J
     
-    J --> L[LLM Processor<br/>OpenAI GPT-4]
+    J --> L[LLM Processor<br/>OpenAI GPT-5-mini]
     L --> M[Eligibility Analyzer]
     M --> N[Response Formatter]
     N --> O[CLI Output<br/>Türkçe Sonuçlar]
@@ -157,7 +157,7 @@ class ChunkMetadata:
 **Chunking Kuralları**:
 1. **Madde bazlı**: Her madde (4.2.1, 4.2.2, vb.) ayrı chunk
 2. **Overlap**: 100-200 karakter overlap (bağlam korunması için)
-3. **Chunk Size**: 500-1000 token (GPT-4 için optimal)
+3. **Chunk Size**: 500-1000 token (GPT-5-mini için optimal)
 4. **Metadata Enrichment**: Her chunk'a ilgili ilaç isimleri, tanı kodları eklenir
 
 **Örnek Chunk**:
@@ -325,7 +325,7 @@ sequenceDiagram
     participant P as Parser
     participant R as RAG Engine
     participant V as Pinecone
-    participant L as LLM (GPT-4)
+    participant L as LLM (GPT-5-mini)
     participant O as Output Formatter
     
     E->>C: Rapor metnini yapıştır
@@ -544,9 +544,9 @@ class EligibilityChecker:
         # Construct prompt
         prompt = self._build_prompt(drug, diagnosis, patient, sut_chunks)
         
-        # Call GPT-4
+        # Call GPT-5-mini
         response = self.client.chat.completions.create(
-            model="gpt-4-turbo-preview",
+            model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt}
@@ -704,7 +704,7 @@ OPENAI_API_KEY=sk-...
 
 # Model settings
 EMBEDDING_MODEL=text-embedding-3-small
-LLM_MODEL=gpt-4-turbo-preview
+LLM_MODEL=gpt-5-mini
 CHUNK_SIZE=1000
 CHUNK_OVERLAP=200
 TOP_K_CHUNKS=5
@@ -800,7 +800,7 @@ Raporu PDF olarak kaydet? (e/h): _
 
 ### 11.2 Performance Targets
 - **Response Time**: <10 saniye (5 ilaç için)
-- **Cost per Query**: ~$0.05-0.10 (GPT-4 + embedding)
+- **Cost per Query**: ~$0.005-0.01 (GPT-5-mini + embedding)
 - **Throughput**: 100+ sorgu/saat
 
 ### 11.3 Error Handling
@@ -924,7 +924,7 @@ python -m src.cli.main
 ### Per Query (5 ilaç):
 - **Embeddings**: 5 queries × $0.0001 = $0.0005
 - **FAISS**: $0 (local, free!)
-- **GPT-4 Turbo**: ~2000 tokens × $0.01/1K = $0.02
+- **GPT-5-mini**: ~2000 tokens × $0.0025/1K = $0.005
 - **Total**: ~$0.02 per report
 
 ### Monthly (1000 rapor):
@@ -993,7 +993,7 @@ python -m src.cli.main
 4. ❓ Sonuçları PDF'e aktarma özelliği?
 
 ### Teknik Kararlar:
-- ✅ OpenAI (GPT-4) kullan - En iyi Türkçe desteği
+- ✅ OpenAI (GPT-5-mini) kullan - En iyi Türkçe desteği
 - ✅ Pinecone - Managed, kolay setup
 - ✅ CLI MVP - Hızlı test için
 - ✅ Chunk size: 1000 token - Optimal balance

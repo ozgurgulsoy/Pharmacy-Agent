@@ -5,8 +5,8 @@ import re
 from datetime import datetime
 from typing import Optional
 
-from models.report import ParsedReport, DoctorInfo, PatientInfo
-from llm.openai_client import OpenAIClientWrapper
+from app.models.report import ParsedReport, DoctorInfo, PatientInfo
+from app.core.llm.openai_client import OpenAIClientWrapper
 from .drug_extractor import DrugExtractor
 from .diagnosis_extractor import DiagnosisExtractor
 from .patient_extractor import PatientInfoExtractor
@@ -284,7 +284,7 @@ JSON yanıt:"""
                     except:
                         pass
 
-                from models.report import Drug
+                from app.models.report import Drug
                 drug = Drug(
                     kod=drug_data.get("kod", "UNKNOWN"),
                     etkin_madde=drug_data.get("etkin_madde", "UNKNOWN"),
@@ -315,7 +315,7 @@ JSON yanıt:"""
                     except:
                         pass
 
-                from models.report import Diagnosis
+                from app.models.report import Diagnosis
                 diagnosis = Diagnosis(
                     icd10_code=diag_data.get("icd10_code", "UNKNOWN"),
                     tanim=diag_data.get("tanim", "UNKNOWN"),

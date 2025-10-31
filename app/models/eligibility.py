@@ -9,7 +9,7 @@ class Condition:
     """Uygunluk koşulu model."""
     description: str
     is_met: Optional[bool]  # True/False/None (belirlenemedi)
-    required_info: str  # Eksik bilgi varsa
+    required_info: Optional[str] = None  # Eksik bilgi varsa
 
 
 @dataclass

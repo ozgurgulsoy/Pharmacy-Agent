@@ -4,8 +4,8 @@ import logging
 from typing import List, Dict, Any
 from openai import OpenAI
 
-from models.eligibility import Chunk
-from config.settings import EMBEDDING_MODEL, EMBEDDING_DIMENSION
+from app.models.eligibility import Chunk
+from app.config.settings import EMBEDDING_MODEL, EMBEDDING_DIMENSION
 
 logger = logging.getLogger(__name__)
 

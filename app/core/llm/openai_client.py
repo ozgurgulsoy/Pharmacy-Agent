@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any
 import json
 
 from openai import OpenAI
-from config.settings import OPENAI_API_KEY, LLM_MODEL, MAX_TOKENS, TEMPERATURE
+from app.config.settings import OPENAI_API_KEY, LLM_MODEL, MAX_TOKENS, TEMPERATURE
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +17,8 @@ class OpenAIClientWrapper:
         self.api_key = api_key or OPENAI_API_KEY
         self.client = OpenAI(
             api_key=self.api_key,
-            timeout=60.0,  # Explicit timeout
-            max_retries=2  # Reduce retries for faster failures
+            timeout=90.0,  # Increased timeout for complex requests
+            max_retries=1  # Reduce retries - fail fast
         )
         self.model = LLM_MODEL
         self.max_tokens = MAX_TOKENS
@@ -101,7 +101,8 @@ class OpenAIClientWrapper:
     def chat_completion_json(
         self,
         system_prompt: str,
-        user_prompt: str
+        user_prompt: str,
+        max_retries: int = 2
     ) -> Dict[str, Any]:
         """
         JSON formatında yanıt döndürür.
@@ -109,23 +110,60 @@ class OpenAIClientWrapper:
         Args:
             system_prompt: System mesajı
             user_prompt: User mesajı
+            max_retries: JSON parse hatası durumunda retry sayısı
 
         Returns:
             Parse edilmiş JSON objesi
         """
-        response_text = self.chat_completion(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            response_format={"type": "json_object"}
-        )
+        last_error = None
+        response_text = None
+        
+        for attempt in range(max_retries + 1):
+            try:
+                response_text = self.chat_completion(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    response_format={"type": "json_object"}
+                )
 
-        try:
-            return json.loads(response_text)
-        except json.JSONDecodeError as e:
-            self.logger.error(f"Failed to parse JSON response: {e}")
-            self.logger.debug(f"Response text: {response_text}")
-            # Fallback: Metni JSON'a dönüştürmeye çalış
-            return {"raw_response": response_text, "parse_error": str(e)}
+                # Try to parse JSON
+                return json.loads(response_text)
+                
+            except json.JSONDecodeError as e:
+                last_error = e
+                self.logger.warning(f"JSON parse attempt {attempt + 1}/{max_retries + 1} failed: {e}")
+                
+                if attempt < max_retries:
+                    # Try to fix common JSON issues
+                    if response_text:
+                        # Try to extract JSON from markdown code blocks
+                        import re
+                        json_match = re.search(r'```(?:json)?\s*(\{.*\})\s*```', response_text, re.DOTALL)
+                        if json_match:
+                            try:
+                                return json.loads(json_match.group(1))
+                            except:
+                                pass
+                        
+                        # Try to find first { and last } to extract JSON
+                        first_brace = response_text.find('{')
+                        last_brace = response_text.rfind('}')
+                        if first_brace >= 0 and last_brace > first_brace:
+                            try:
+                                extracted = response_text[first_brace:last_brace + 1]
+                                return json.loads(extracted)
+                            except:
+                                pass
+                    
+                    self.logger.info(f"Retrying request (attempt {attempt + 2}/{max_retries + 1})...")
+                    continue
+                else:
+                    # Final attempt failed
+                    self.logger.error(f"Failed to parse JSON after {max_retries + 1} attempts")
+                    if response_text:
+                        self.logger.debug(f"Response text (first 500 chars): {response_text[:500]}")
+                    # Fallback: Return raw response
+                    return {"raw_response": response_text or "", "parse_error": str(last_error)}
 
     def create_embedding(self, text: str, model: str = "gpt-5-mini") -> list:
         """

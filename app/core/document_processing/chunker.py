@@ -11,8 +11,8 @@ import re
 from typing import List, Dict, Any, Tuple
 from dataclasses import dataclass
 
-from models.eligibility import Chunk, ChunkMetadata
-from config.settings import (
+from app.models.eligibility import Chunk, ChunkMetadata
+from app.config.settings import (
     CHUNK_SIZE, 
     CHUNK_OVERLAP, 
     CHUNKING_STRATEGY,

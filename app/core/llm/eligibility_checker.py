@@ -3,11 +3,11 @@
 import logging
 from typing import List, Dict, Any
 
-from models.report import Drug, Diagnosis, PatientInfo, DoctorInfo
-from models.eligibility import EligibilityResult, Condition
+from app.models.report import Drug, Diagnosis, PatientInfo, DoctorInfo
+from app.models.eligibility import EligibilityResult, Condition
 from .openai_client import OpenAIClientWrapper
 from .prompts import PromptBuilder, SYSTEM_PROMPT
-from config.settings import MAX_BATCH_SIZE
+from app.config.settings import MAX_BATCH_SIZE
 
 logger = logging.getLogger(__name__)
 
@@ -110,13 +110,13 @@ class EligibilityChecker:
         )
 
         # SMART BATCHING: For >MAX_BATCH_SIZE drugs, use sequential processing for better accuracy
-        # gpt-5-nano with temperature=1.0 can be unreliable with large batch prompts
+        # gpt-5-mini with temperature=1.0 can be unreliable with large batch prompts
         num_drugs = len(drugs)
         
         if num_drugs > MAX_BATCH_SIZE:
             self.logger.warning(f"⚠️ {num_drugs} drugs detected - using sequential processing for reliability")
             self.logger.info(f"(Batch processing works best for 1-{MAX_BATCH_SIZE} drugs; {num_drugs} drugs may cause incomplete responses)")
-            self.logger.info(f"💡 TIP: Adjust MAX_BATCH_SIZE in .env if using a more reliable model like gpt-4o-mini")
+            self.logger.info(f"💡 TIP: Adjust MAX_BATCH_SIZE in .env if using a more reliable model like gpt-5-mini")
             
             # Sequential processing with timing
             import time
@@ -208,7 +208,35 @@ class EligibilityChecker:
     def _parse_response(self, response_json: Dict[str, Any], drug_name: str) -> EligibilityResult:
         """LLM JSON yanıtını EligibilityResult'a çevirir."""
         try:
-            # Conditions listesini parse et
+            # Handle error responses from JSON parsing failures
+            if 'parse_error' in response_json:
+                self.logger.warning(f"Handling partial/malformed response for {drug_name}")
+                raw_response = response_json.get('raw_response', '')
+                
+                # Try to extract partial information from raw text
+                if raw_response:
+                    # Extract status if present
+                    import re
+                    status_match = re.search(r'"status"\s*:\s*"(ELIGIBLE|NOT_ELIGIBLE|CONDITIONAL)"', raw_response)
+                    status = status_match.group(1) if status_match else 'CONDITIONAL'
+                    
+                    # Extract explanation if present
+                    explanation_match = re.search(r'"explanation"\s*:\s*"([^"]+)"', raw_response, re.DOTALL)
+                    explanation = explanation_match.group(1)[:500] if explanation_match else 'Yanıt kısmi/hatalı olabilir.'
+                    
+                    return EligibilityResult(
+                        drug_name=drug_name,
+                        status=status,
+                        confidence=0.3,  # Low confidence due to parse error
+                        sut_reference='Parse hatası nedeniyle sınırlı bilgi',
+                        conditions=[],
+                        explanation=f"⚠️ Yanıt tam parse edilemedi. Kısmi bilgi:\n{explanation}",
+                        warnings=["JSON parse hatası oluştu", "Manuel kontrol önerilir"]
+                    )
+                else:
+                    return self._create_fallback_result(drug_name, response_json.get('parse_error', 'Unknown error'))
+            
+            # Normal parsing
             conditions = []
             for cond_data in response_json.get('conditions', []):
                 condition = Condition(

@@ -1,7 +1,7 @@
 """Prompt templates for LLM."""
 
 from typing import List, Dict, Any
-from models.report import Drug, Diagnosis, PatientInfo
+from app.models.report import Drug, Diagnosis, PatientInfo
 
 
 # Extraction System Prompts
@@ -70,31 +70,44 @@ Eğer bir bilgi bulunamazsa null kullan.
 }
 """
 
-# Optimized System Prompt for Speed
+# Optimized System Prompt for Speed and Token Efficiency
 SYSTEM_PROMPT = """SGK/SUT uzmanısın. İlaç uygunluğunu değerlendir.
 
-ELIGIBLE: SUT koşulları karşılandı
-CONDITIONAL: Bilgi eksik/şüpheli
-NOT_ELIGIBLE: SUT koşulları karşılanmadı
+KURALLAR:
+- ELIGIBLE: SUT koşulları tam karşılanmış
+- CONDITIONAL: Bilgi eksik veya şüpheli, ek doğrulama gerekli  
+- NOT_ELIGIBLE: SUT koşulları karşılanmamış
 
-JSON:
-{"drug_name": "...", "status": "ELIGIBLE|NOT_ELIGIBLE|CONDITIONAL", "confidence": 0.0-1.0, "sut_reference": "...", "conditions": [{"description": "...", "is_met": true/false/null, "required_info": "..."}], "explanation": "...", "warnings": [...]}"""
+ÖNEMLI: Yanıtı KISA ve ÖZ tut. Gereksiz tekrar yapma.
+
+JSON format:
+{
+  "drug_name": "ilaç adı",
+  "status": "ELIGIBLE|NOT_ELIGIBLE|CONDITIONAL",
+  "confidence": 0.8,
+  "sut_reference": "kısa referans",
+  "conditions": [
+    {"description": "kısa koşul", "is_met": true|false|null, "required_info": "eksik bilgi varsa"}
+  ],
+  "explanation": "maksimum 2-3 cümle özet açıklama",
+  "warnings": ["kısa uyarılar"]
+}"""
 
 # Eligibility Check System Prompt
 ELIGIBILITY_SYSTEM_PROMPT = SYSTEM_PROMPT  # Backward compatibility
 
 
 # Optimized User Prompt Template for Speed
-USER_PROMPT_TEMPLATE = """İlaç: {drug_name}
-Tanı: {diagnosis_name} ({icd_code})
-Hasta: {patient_age}y, {patient_gender}
-Doktor: {doctor_specialty}
+USER_PROMPT_TEMPLATE = """💊 İLAÇ: {drug_name}
+🏥 TANI: {diagnosis_name} ({icd_code})
+👤 HASTA: {patient_age}y, {patient_gender}
+👨‍⚕️ DOKTOR: {doctor_specialty}
 {explanations}
 
-SUT:
+📋 SUT KURALLARI:
 {sut_chunks}
 
-SGK uygunluğu? JSON:"""
+GÖREV: SGK uygunluğunu değerlendir. Yanıtı KISA tut (max 500 kelime). JSON:"""
 
 
 class PromptBuilder:
@@ -155,23 +168,23 @@ class PromptBuilder:
     def _format_sut_chunks(chunks: List[Dict[str, Any]]) -> str:
         """SUT chunk'larını okunabilir formata çevirir."""
         if not chunks:
-            return "Bulunamadı"
+            return "❌ İlgili kural bulunamadı"
 
         formatted_chunks = []
 
-        for i, chunk in enumerate(chunks[:3], 1):  # Top 3 only
+        for i, chunk in enumerate(chunks[:3], 1):  # Top 3 only for speed
             metadata = chunk.get('metadata', {})
             content = metadata.get('content', '')
-            section = metadata.get('section', '?')
+            section = metadata.get('section', 'Bölüm ?')
 
-            # Shorten aggressively for speed
-            if len(content) > 400:
-                content = content[:400] + "..."
+            # Shorten aggressively for speed - max 350 chars per chunk
+            if len(content) > 350:
+                content = content[:350] + "..."
 
-            chunk_text = f"{section}: {content}"
+            chunk_text = f"[{i}] {section}\n{content}"
             formatted_chunks.append(chunk_text.strip())
 
-        return "\n".join(formatted_chunks)
+        return "\n\n".join(formatted_chunks)
 
     @staticmethod
     def build_summary_prompt(eligibility_results: List[Dict[str, Any]]) -> str:

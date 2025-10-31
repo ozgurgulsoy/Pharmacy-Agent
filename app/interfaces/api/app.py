@@ -57,7 +57,7 @@ class ConditionResponse(BaseModel):
     """Condition response model."""
     description: str
     is_met: bool | None
-    required_info: str
+    required_info: str | None = None
 
 
 class EligibilityResponse(BaseModel):
@@ -232,6 +232,13 @@ async def serve_home():
         raise HTTPException(status_code=404, detail="Web UI not found")
     
     return HTMLResponse(content=html_path.read_text(), status_code=200)
+
+
+@app.get("/html/app.html", response_class=HTMLResponse)
+async def redirect_old_route():
+    """Redirect old route to new location."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url="/", status_code=301)
 
 
 @app.get("/health")

@@ -9,11 +9,11 @@ from typing import List, Dict, Any, Optional, Tuple
 
 from openai import OpenAI
 
-from rag.faiss_store import FAISSVectorStore
-from document_processing.embeddings import EmbeddingGenerator
-from models.report import Drug, Diagnosis, PatientInfo
-from models.eligibility import RetrievedChunk, Chunk
-from config.settings import EMBEDDING_MODEL
+from app.core.rag.faiss_store import FAISSVectorStore
+from app.core.document_processing.embeddings import EmbeddingGenerator
+from app.models.report import Drug, Diagnosis, PatientInfo
+from app.models.eligibility import RetrievedChunk, Chunk
+from app.config.settings import EMBEDDING_MODEL
 
 logger = logging.getLogger(__name__)
 

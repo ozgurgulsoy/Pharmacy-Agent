@@ -8,7 +8,7 @@ from typing import List, Dict, Any, Optional
 import numpy as np
 import faiss
 
-from config.settings import FAISS_INDEX_PATH, FAISS_METADATA_PATH, EMBEDDING_DIMENSION
+from app.config.settings import FAISS_INDEX_PATH, FAISS_METADATA_PATH, EMBEDDING_DIMENSION
 
 logger = logging.getLogger(__name__)
 

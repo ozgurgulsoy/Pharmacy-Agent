@@ -5,8 +5,8 @@ import json
 from datetime import datetime
 from typing import Optional
 
-from models.report import PatientInfo
-from llm.openai_client import OpenAIClientWrapper
+from app.models.report import PatientInfo
+from app.core.llm.openai_client import OpenAIClientWrapper
 
 logger = logging.getLogger(__name__)
 
