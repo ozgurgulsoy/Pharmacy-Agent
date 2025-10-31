@@ -7,6 +7,7 @@ from models.report import Drug, Diagnosis, PatientInfo, DoctorInfo
 from models.eligibility import EligibilityResult, Condition
 from .openai_client import OpenAIClientWrapper
 from .prompts import PromptBuilder, SYSTEM_PROMPT
+from config.settings import MAX_BATCH_SIZE
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ class EligibilityChecker:
         Birden fazla ilaç için uygunluk kontrolü.
         
         OPTIMIZED: Uses a single batched LLM call instead of sequential calls.
-        This reduces N sequential LLM calls to 1, dramatically improving performance.
+        For large numbers of drugs (>3), falls back to sequential to ensure accuracy.
 
         Args:
             drugs: İlaç listesi
@@ -108,13 +109,54 @@ class EligibilityChecker:
             tanim="Tanı belirtilmemiş"
         )
 
-        # Try batched processing first; on failure, fall back to sequential with detailed logging
+        # SMART BATCHING: For >MAX_BATCH_SIZE drugs, use sequential processing for better accuracy
+        # gpt-5-nano with temperature=1.0 can be unreliable with large batch prompts
+        num_drugs = len(drugs)
+        
+        if num_drugs > MAX_BATCH_SIZE:
+            self.logger.warning(f"⚠️ {num_drugs} drugs detected - using sequential processing for reliability")
+            self.logger.info(f"(Batch processing works best for 1-{MAX_BATCH_SIZE} drugs; {num_drugs} drugs may cause incomplete responses)")
+            self.logger.info(f"💡 TIP: Adjust MAX_BATCH_SIZE in .env if using a more reliable model like gpt-4o-mini")
+            
+            # Sequential processing with timing
+            import time
+            total_start = time.time()
+            results: List[EligibilityResult] = []
+            
+            for i, drug in enumerate(drugs, 1):
+                self.logger.info(f"   ▶ Processing drug {i}/{num_drugs}: {drug.etkin_madde}")
+                drug_start = time.time()
+                
+                sut_chunks = sut_chunks_per_drug.get(drug.etkin_madde, [])
+                try:
+                    result = self.check_eligibility(
+                        drug=drug,
+                        diagnosis=primary_diagnosis,
+                        patient=patient,
+                        doctor=doctor,
+                        sut_chunks=sut_chunks,
+                        explanations=explanations
+                    )
+                except Exception as e:
+                    self.logger.error(f"Error checking eligibility for {drug.etkin_madde}: {e}")
+                    result = self._create_fallback_result(drug.etkin_madde, str(e))
+                
+                drug_elapsed = time.time() - drug_start
+                self.logger.info(f"   ✓ {drug.etkin_madde} done in {drug_elapsed:.2f}s")
+                results.append(result)
+            
+            total_elapsed = time.time() - total_start
+            avg_time = total_elapsed / num_drugs if num_drugs > 0 else 0
+            self.logger.info(f"✅ Sequential processing completed: {total_elapsed:.2f}s total, {avg_time:.2f}s avg/drug")
+            return results
+        
+        # BATCHED PROCESSING: For 1-3 drugs, batch processing is reliable and fast
         import time
         batch_start = time.time()
-        self.logger.info(f"🔍 Starting eligibility check for {len(drugs)} drugs (batched attempt)")
+        self.logger.info(f"🔍 Starting eligibility check for {num_drugs} drugs (batched processing)")
 
         try:
-            self.logger.info(f"🚀 Attempting batched LLM call for all {len(drugs)} drugs")
+            self.logger.info(f"🚀 Batched LLM call for {num_drugs} drug(s)")
             results = self._check_all_drugs_batched(
                 drugs=drugs,
                 diagnosis=primary_diagnosis,
@@ -125,10 +167,7 @@ class EligibilityChecker:
             )
 
             batch_elapsed = time.time() - batch_start
-            try:
-                avg_ms = (batch_elapsed * 1000) / len(drugs)
-            except Exception:
-                avg_ms = batch_elapsed * 1000
+            avg_ms = (batch_elapsed * 1000) / num_drugs if num_drugs > 0 else 0
 
             self.logger.info(f"✅ Batched check succeeded in {batch_elapsed:.2f}s (avg {avg_ms:.1f}ms/drug)")
             return results
@@ -136,12 +175,12 @@ class EligibilityChecker:
         except Exception as e:
             self.logger.error(f"❌ Batched LLM call failed: {type(e).__name__}: {e}")
             self.logger.exception("Batched eligibility failure stacktrace")
-            self.logger.warning("⚠️ Falling back to sequential processing for each drug")
+            self.logger.warning("⚠️ Falling back to sequential processing")
 
-            # Sequential fallback (kept for robustness) with per-drug timing/logging
+            # Sequential fallback
             results: List[EligibilityResult] = []
             for i, drug in enumerate(drugs, 1):
-                self.logger.info(f"   ▶ Processing drug {i}/{len(drugs)}: {drug.etkin_madde}")
+                self.logger.info(f"   ▶ Processing drug {i}/{num_drugs}: {drug.etkin_madde}")
                 drug_start = time.time()
 
                 sut_chunks = sut_chunks_per_drug.get(drug.etkin_madde, [])
@@ -163,7 +202,7 @@ class EligibilityChecker:
                 results.append(result)
 
             total_elapsed = time.time() - batch_start
-            self.logger.warning(f"⚠️ Sequential fallback completed in {total_elapsed:.2f}s for {len(drugs)} drugs")
+            self.logger.warning(f"⚠️ Sequential fallback completed in {total_elapsed:.2f}s for {num_drugs} drugs")
             return results
 
     def _parse_response(self, response_json: Dict[str, Any], drug_name: str) -> EligibilityResult:

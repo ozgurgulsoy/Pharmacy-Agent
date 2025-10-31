@@ -53,9 +53,24 @@ class OpenAIClientWrapper:
             kwargs = {
                 "model": self.model,
                 "messages": messages,
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
             }
+
+            # Handle model-specific parameters
+            # gpt-5-* models: use max_completion_tokens, temperature must be 1 (default)
+            # o1-* models: use max_completion_tokens, no temperature support
+            # gpt-4-*, gpt-3.5-*: use max_tokens, support temperature
+            
+            if self.model.startswith("gpt-5"):
+                kwargs["max_completion_tokens"] = self.max_tokens
+                # gpt-5-nano only supports temperature=1 (default), so omit it
+                # Temperature will use default value of 1
+            elif self.model.startswith("o1"):
+                kwargs["max_completion_tokens"] = self.max_tokens
+                # o1 models don't support temperature parameter at all
+            else:
+                # Standard models (gpt-4, gpt-3.5, etc.)
+                kwargs["max_tokens"] = self.max_tokens
+                kwargs["temperature"] = self.temperature
 
             if response_format:
                 kwargs["response_format"] = response_format
