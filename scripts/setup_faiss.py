@@ -9,20 +9,19 @@ import sys
 import os
 from pathlib import Path
 
-# Add src to path
+# Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
-sys.path.insert(0, str(project_root / 'src'))
 
 from openai import OpenAI
 
-from config.settings import OPENAI_API_KEY, EMBEDDING_DIMENSION, EMBEDDING_PROVIDER
+from app.config.settings import OPENAI_API_KEY, EMBEDDING_DIMENSION, EMBEDDING_PROVIDER
 
 # Import modules
-from document_processing.pdf_loader import PDFLoader
-from document_processing.chunker import SUTDocumentChunker
-from document_processing.embeddings import EmbeddingGenerator
-from rag.faiss_store import FAISSVectorStore
+from app.core.document_processing.pdf_loader import PDFLoader
+from app.core.document_processing.chunker import SUTDocumentChunker
+from app.core.document_processing.embeddings import EmbeddingGenerator
+from app.core.rag.faiss_store import FAISSVectorStore
 
 # Setup logging
 logging.basicConfig(

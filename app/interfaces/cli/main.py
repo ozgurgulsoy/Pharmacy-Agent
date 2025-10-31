@@ -6,9 +6,9 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-# Add src to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root / 'src'))
+# Add app to path
+project_root = Path(__file__).parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 from rich.console import Console
 from rich.panel import Panel
@@ -19,13 +19,13 @@ from rich import print as rprint
 
 from openai import OpenAI
 
-from config.settings import OPENAI_API_KEY, FAISS_INDEX_PATH, FAISS_METADATA_PATH
-from parsers.input_parser import InputParser
-from rag.faiss_store import FAISSVectorStore
-from rag.retriever import RAGRetriever
-from llm.openai_client import OpenAIClientWrapper
-from llm.eligibility_checker import EligibilityChecker
-from models.eligibility import EligibilityResult
+from app.config.settings import OPENAI_API_KEY, FAISS_INDEX_PATH, FAISS_METADATA_PATH
+from app.core.parsers.input_parser import InputParser
+from app.core.rag.faiss_store import FAISSVectorStore
+from app.core.rag.retriever import RAGRetriever
+from app.core.llm.openai_client import OpenAIClientWrapper
+from app.core.llm.eligibility_checker import EligibilityChecker
+from app.models.eligibility import EligibilityResult
 
 # Setup logging
 logging.basicConfig(

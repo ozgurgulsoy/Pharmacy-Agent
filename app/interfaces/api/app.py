@@ -5,9 +5,9 @@ import logging
 from pathlib import Path
 from typing import Dict, Any
 
-# Add src to path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root / 'src'))
+# Add app to path
+project_root = Path(__file__).parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,12 +16,12 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from openai import OpenAI
 
-from config.settings import OPENAI_API_KEY, FAISS_INDEX_PATH, FAISS_METADATA_PATH
-from parsers.input_parser import InputParser
-from rag.faiss_store import FAISSVectorStore
-from rag.retriever import RAGRetriever
-from llm.openai_client import OpenAIClientWrapper
-from llm.eligibility_checker import EligibilityChecker
+from app.config.settings import OPENAI_API_KEY, FAISS_INDEX_PATH, FAISS_METADATA_PATH
+from app.core.parsers.input_parser import InputParser
+from app.core.rag.faiss_store import FAISSVectorStore
+from app.core.rag.retriever import RAGRetriever
+from app.core.llm.openai_client import OpenAIClientWrapper
+from app.core.llm.eligibility_checker import EligibilityChecker
 
 # Setup logging
 logging.basicConfig(
@@ -43,7 +43,7 @@ app.add_middleware(
 )
 
 # Mount static files
-web_static_path = project_root / "web" / "static"
+web_static_path = project_root / "app" / "interfaces" / "web" / "static"
 if web_static_path.exists():
     app.mount("/static", StaticFiles(directory=str(web_static_path)), name="static")
 
@@ -227,7 +227,7 @@ async def startup_event():
 @app.get("/", response_class=HTMLResponse)
 async def serve_home():
     """Serve the main web UI."""
-    html_path = project_root / "web" / "templates" / "index.html"
+    html_path = project_root / "app" / "interfaces" / "web" / "templates" / "index.html"
     if not html_path.exists():
         raise HTTPException(status_code=404, detail="Web UI not found")
     

@@ -85,11 +85,11 @@ def start_server():
     # Change to project root
     os.chdir(project_root)
     
-    # Run uvicorn
+    # Run uvicorn with new app location
     try:
         subprocess.run([
             str(python_exe), "-m", "uvicorn",
-            "src.api.app:app",
+            "app.interfaces.api.app:app",
             "--host", "0.0.0.0",
             "--port", "8000"
         ], check=True)
