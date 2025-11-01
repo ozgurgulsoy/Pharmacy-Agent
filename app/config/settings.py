@@ -17,7 +17,7 @@ OPENROUTER_BASE_URL: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.
 
 # Model Settings
 EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-LLM_MODEL: str = os.getenv("LLM_MODEL", "qwen/qwen3-30b-a3b-instruct-2507")  # Qwen model via OpenRouter, excellent for Turkish
+LLM_MODEL: str = os.getenv("LLM_MODEL", "x-ai/grok-4-fast")  # xAI Grok 4 Fast via OpenRouter
 
 # Chunk Settings - Optimized for SUT regulatory documents with hierarchical structure
 # Note: text-embedding-3-small supports up to 8191 tokens, so we have plenty of room
