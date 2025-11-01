@@ -109,8 +109,6 @@ class EligibilityChecker:
             tanim="Tanı belirtilmemiş"
         )
 
-        # SMART BATCHING: For >MAX_BATCH_SIZE drugs, use sequential processing for better accuracy
-        # gpt-5-mini can be unreliable with large batch prompts
         num_drugs = len(drugs)
         
         if num_drugs > MAX_BATCH_SIZE:
