@@ -1,6 +1,6 @@
 """Prompt templates for LLM."""
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from app.models.report import Drug, Diagnosis, PatientInfo
 
 
@@ -75,10 +75,12 @@ SYSTEM_PROMPT = """SGK/SUT uzmanısın. İlaç uygunluğunu değerlendir.
 
 KURALLAR:
 - ELIGIBLE: SUT koşulları tam karşılanmış
-- CONDITIONAL: Bilgi eksik veya şüpheli, ek doğrulama gerekli  
+- CONDITIONAL: Bilgi eksik veya şüpheli, ek doğrulama gerekli
 - NOT_ELIGIBLE: SUT koşulları karşılanmamış
 
 ÖNEMLI: Yanıtı KISA ve ÖZ tut. Gereksiz tekrar yapma.
+
+ÖNEMLİ: Yanıtın sadece geçerli JSON formatında olması gerekiyor. confidence değeri 0-1 arasında olmalı. Ek açıklama metni içerme.
 
 JSON format:
 {
@@ -117,7 +119,7 @@ class PromptBuilder:
     def build_eligibility_prompt(
         drug: Drug,
         diagnosis: Diagnosis,
-        patient: PatientInfo,
+        patient: Optional[PatientInfo],
         doctor_name: str,
         doctor_specialty: str,
         sut_chunks: List[Dict[str, Any]],
@@ -139,7 +141,7 @@ class PromptBuilder:
             Formatted prompt
         """
         # SUT chunks'ı formatla
-        sut_text = PromptBuilder._format_sut_chunks(sut_chunks)
+        sut_text = PromptBuilder._format_sut_chunks(sut_chunks, max_chunks=3, max_chars_per_chunk=350)
 
         # Açıklamalar kısmını ekle (varsa)
         explanations_text = ""
@@ -149,13 +151,10 @@ class PromptBuilder:
         # Prompt template'i doldur
         prompt = USER_PROMPT_TEMPLATE.format(
             drug_name=drug.etkin_madde,
-            drug_code=drug.kod,
-            drug_form=drug.form,
-            drug_schema=drug.tedavi_sema,
             diagnosis_name=diagnosis.tanim if diagnosis else "Belirtilmemiş",
             icd_code=diagnosis.icd10_code if diagnosis else "UNKNOWN",
-            patient_age=patient.yas if patient.yas else "Belirtilmemiş",
-            patient_gender=patient.cinsiyet if patient.cinsiyet else "Belirtilmemiş",
+            patient_age=patient.yas if patient and patient.yas else "Belirtilmemiş",
+            patient_gender=patient.cinsiyet if patient and patient.cinsiyet else "Belirtilmemiş",
             doctor_name=doctor_name,
             doctor_specialty=doctor_specialty,
             sut_chunks=sut_text,
@@ -165,51 +164,111 @@ class PromptBuilder:
         return prompt
 
     @staticmethod
-    def _format_sut_chunks(chunks: List[Dict[str, Any]]) -> str:
-        """SUT chunk'larını okunabilir formata çevirir."""
+    def _format_sut_chunks(chunks: List[Dict[str, Any]], max_chunks: int = 3, max_chars_per_chunk: int = 350,
+                          include_page_numbers: bool = True, include_confidence: bool = True) -> str:
+        """SUT chunk'larını okunabilir formata çevirir.
+        
+        Args:
+            chunks: Chunk'lar listesi
+            max_chunks: Maksimum kullanılacak chunk sayısı
+            max_chars_per_chunk: Chunk başına maksimum karakter sayısı
+            include_page_numbers: Sayfa numaralarını dahil et
+            include_confidence: Güven puanlarını dahil et
+        """
         if not chunks:
             return "❌ İlgili kural bulunamadı"
 
         formatted_chunks = []
 
-        for i, chunk in enumerate(chunks[:3], 1):  # Top 3 only for speed
+        for i, chunk in enumerate(chunks[:max_chunks], 1):
             metadata = chunk.get('metadata', {})
             content = metadata.get('content', '')
             section = metadata.get('section', 'Bölüm ?')
-
-            # Shorten aggressively for speed - max 350 chars per chunk
-            if len(content) > 350:
-                content = content[:350] + "..."
-
-            chunk_text = f"[{i}] {section}\n{content}"
+            
+            # Ek bilgileri al
+            chunk_parts = [f"[{i}] {section}"]
+            
+            # Sayfa numarası ekle
+            if include_page_numbers:
+                page_info = metadata.get('page_number', metadata.get('page', ''))
+                if page_info:
+                    chunk_parts.append(f"Sayfa: {page_info}")
+            
+            # Güven puanı ekle
+            if include_confidence:
+                confidence = metadata.get('confidence', metadata.get('score', ''))
+                if confidence is not None:
+                    chunk_parts.append(f"Güven: {confidence}")
+            
+            # İçeriği kısalt
+            if len(content) > max_chars_per_chunk:
+                content = content[:max_chars_per_chunk] + "..."
+            
+            chunk_parts.append(content)
+            
+            chunk_text = "\n".join(chunk_parts)
             formatted_chunks.append(chunk_text.strip())
 
         return "\n\n".join(formatted_chunks)
 
     @staticmethod
-    def build_summary_prompt(eligibility_results: List[Dict[str, Any]]) -> str:
+    def build_summary_prompt(eligibility_results: List[Dict[str, Any]], format_type: str = 'markdown') -> str:
         """
         Tüm ilaçlar için özet prompt oluşturur.
 
         Args:
             eligibility_results: İlaç uygunluk sonuçları
+            format_type: 'markdown' veya 'json' formatı
 
         Returns:
-            Summary prompt
+            Formatted summary prompt
         """
-        # Bu fonksiyon gelecekte CLI output için kullanılabilir
-        summary = "## İLAÇ UYGUNLUK ÖZETİ\n\n"
+        if format_type.lower() == 'json':
+            # JSON formatında tutarlı şema
+            summary_data = []
+            
+            for i, result in enumerate(eligibility_results, 1):
+                drug_name = result.get('drug_name', 'Bilinmeyen ilaç')
+                status = result.get('status', 'UNKNOWN')
+                confidence = result.get('confidence', 0.0)
+                
+                summary_item = {
+                    "order": i,
+                    "drug_name": drug_name,
+                    "status": status,
+                    "confidence": confidence,
+                    "eligible": status == 'ELIGIBLE',
+                    "requires_review": status == 'CONDITIONAL'
+                }
+                
+                # Sut referansı varsa ekle
+                if 'sut_reference' in result:
+                    summary_item["sut_reference"] = result['sut_reference']
+                
+                # Uyarılar varsa ekle
+                if 'warnings' in result and result['warnings']:
+                    summary_item["warnings"] = result['warnings']
+                
+                summary_data.append(summary_item)
+            
+            import json
+            return json.dumps(summary_data, indent=2, ensure_ascii=False)
+        
+        else:
+            # Markdown format (mevcut)
+            summary = "## İLAÇ UYGUNLUK ÖZETİ\n\n"
 
-        for i, result in enumerate(eligibility_results, 1):
-            drug_name = result.get('drug_name', 'Bilinmeyen ilaç')
-            status = result.get('status', 'UNKNOWN')
+            for i, result in enumerate(eligibility_results, 1):
+                drug_name = result.get('drug_name', 'Bilinmeyen ilaç')
+                status = result.get('status', 'UNKNOWN')
+                confidence = result.get('confidence', 0.0)
 
-            emoji = {
-                'ELIGIBLE': '✅',
-                'NOT_ELIGIBLE': '❌',
-                'CONDITIONAL': '⚠️'
-            }.get(status, '❓')
+                emoji = {
+                    'ELIGIBLE': '✅',
+                    'NOT_ELIGIBLE': '❌',
+                    'CONDITIONAL': '⚠️'
+                }.get(status, '❓')
 
-            summary += f"{i}. {emoji} **{drug_name}** - {status}\n"
+                summary += f"{i}. {emoji} **{drug_name}** - {status} (Güven: {confidence})\n"
 
-        return summary
+            return summary
