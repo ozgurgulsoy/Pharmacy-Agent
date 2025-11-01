@@ -551,7 +551,6 @@ class EligibilityChecker:
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.1,  # Deterministik sonuçlar
             response_format={"type": "json_object"}
         )
         

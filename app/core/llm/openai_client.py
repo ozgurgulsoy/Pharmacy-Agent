@@ -5,25 +5,50 @@ from typing import Optional, Dict, Any
 import json
 
 from openai import OpenAI
-from app.config.settings import OPENAI_API_KEY, LLM_MODEL, MAX_TOKENS, TEMPERATURE
+from app.config.settings import (
+    OPENAI_API_KEY, 
+    OPENROUTER_API_KEY,
+    LLM_MODEL, 
+    LLM_PROVIDER,
+    OPENROUTER_BASE_URL
+)
 
 logger = logging.getLogger(__name__)
 
 
 class OpenAIClientWrapper:
-    """OpenAI API istemcisini sarmalayan sınıf."""
+    """OpenAI/OpenRouter API client wrapper."""
 
-    def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or OPENAI_API_KEY
-        self.client = OpenAI(
-            api_key=self.api_key,
-            timeout=90.0,  # Increased timeout for complex requests
-            max_retries=1  # Reduce retries - fail fast
-        )
+    def __init__(self, api_key: Optional[str] = None, provider: Optional[str] = None):
+        self.provider = provider or LLM_PROVIDER
         self.model = LLM_MODEL
-        self.max_tokens = MAX_TOKENS
-        self.temperature = TEMPERATURE
         self.logger = logging.getLogger(self.__class__.__name__)
+        
+        # Configure client based on provider
+        if self.provider == "openrouter":
+            self.api_key = api_key or OPENROUTER_API_KEY
+            self.client = OpenAI(
+                api_key=self.api_key,
+                base_url=OPENROUTER_BASE_URL,
+                timeout=120.0,  # OpenRouter may need more time for some models
+                max_retries=2
+            )
+            # Store headers for use in requests
+            self.extra_headers = {
+                "HTTP-Referer": "https://pharmacy-agent.local",
+                "X-Title": "Pharmacy Agent"
+            }
+            self.logger.info(f"Initialized OpenRouter client with model: {self.model}")
+        else:
+            # Default to OpenAI
+            self.api_key = api_key or OPENAI_API_KEY
+            self.client = OpenAI(
+                api_key=self.api_key,
+                timeout=90.0,
+                max_retries=1
+            )
+            self.extra_headers = {}
+            self.logger.info(f"Initialized OpenAI client with model: {self.model}")
 
     def chat_completion(
         self,
@@ -55,22 +80,14 @@ class OpenAIClientWrapper:
                 "messages": messages,
             }
 
-            # Handle model-specific parameters
-            # gpt-5-* models: use max_completion_tokens, temperature must be 1 (default)
-            # o1-* models: use max_completion_tokens, no temperature support
-            # gpt-4-*, gpt-3.5-*: use max_tokens, support temperature
-            
-            if self.model.startswith("gpt-5"):
-                kwargs["max_completion_tokens"] = self.max_tokens
-                # gpt-5-nano only supports temperature=1 (default), so omit it
-                # Temperature will use default value of 1
-            elif self.model.startswith("o1"):
-                kwargs["max_completion_tokens"] = self.max_tokens
-                # o1 models don't support temperature parameter at all
-            else:
-                # Standard models (gpt-4, gpt-3.5, etc.)
-                kwargs["max_tokens"] = self.max_tokens
-                kwargs["temperature"] = self.temperature
+            # Handle different model families
+            if self.model.startswith("o1"):
+                # o1 models use max_completion_tokens, no temperature support
+                kwargs["max_completion_tokens"] = 8192
+            elif self.model.startswith("gpt-4"):
+                # gpt-4 models support standard parameters
+                kwargs["max_tokens"] = 4096
+                kwargs["temperature"] = 0.7
 
             if response_format:
                 kwargs["response_format"] = response_format
@@ -78,6 +95,10 @@ class OpenAIClientWrapper:
             # Calculate token estimate
             prompt_tokens = len(system_prompt + user_prompt) // 4  # rough estimate
             self.logger.info(f"🚀 Sending LLM request (model={self.model}, ~{prompt_tokens} prompt tokens)")
+            
+            # Add extra headers for OpenRouter
+            if hasattr(self, 'extra_headers') and self.extra_headers:
+                kwargs['extra_headers'] = self.extra_headers
             
             api_start = time.time()
             response = self.client.chat.completions.create(**kwargs)
