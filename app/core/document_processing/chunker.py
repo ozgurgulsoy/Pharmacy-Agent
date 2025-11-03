@@ -7,7 +7,6 @@ This module implements multiple chunking strategies:
 """
 
 import logging
-import re
 from typing import List, Dict, Any, Tuple
 from dataclasses import dataclass
 
@@ -73,13 +72,34 @@ class SUTDocumentChunker:
 
     def _clean_text(self, text: str) -> str:
         """Metni temizler ve normalize eder."""
-        # Sayfa başlıklarını kaldır
-        text = re.sub(r'=== Sayfa \d+ ===', '', text)
+        if not text:
+            return ""
 
-        # Fazla boşlukları temizle
-        text = re.sub(r'\n\s*\n\s*\n', '\n\n', text)
+        normalized = text.replace('\r\n', '\n').replace('\r', '\n')
+        cleaned_lines: List[str] = []
+        previous_blank = False
 
-        return text.strip()
+        for raw_line in normalized.split('\n'):
+            stripped = raw_line.strip()
+
+            # Sayfa başlıklarını kaldır ("=== Sayfa 12 ===")
+            if stripped.startswith("=== Sayfa") and stripped.endswith("==="):
+                middle = stripped[8:-3].strip()
+                middle_digits = middle.replace("Sayfa", "").strip()
+                if middle_digits.replace(' ', '').isdigit():
+                    continue
+
+            if not stripped:
+                if not previous_blank:
+                    cleaned_lines.append("")
+                previous_blank = True
+                continue
+
+            cleaned_lines.append(stripped)
+            previous_blank = False
+
+        cleaned_text = '\n'.join(cleaned_lines).strip()
+        return cleaned_text
 
     # ==================== Chunking Strategies ====================
 
@@ -97,7 +117,7 @@ class SUTDocumentChunker:
         self.logger.info("Using semantic chunking strategy")
         
         # Split by paragraphs (double newline)
-        paragraphs = re.split(r'\n\n+', text)
+        paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
         
         chunks = []
         current_chunk_text = []
@@ -223,38 +243,36 @@ class SUTDocumentChunker:
         Returns:
             List of chunks
         """
-        # Split by sentences (Turkish sentence endings)
-        sentences = re.split(r'([.!?]\s+)', paragraph)
-        
+        sentences = self._split_sentences(paragraph)
+
         chunks = []
-        current_text = []
+        current_text: List[str] = []
         current_size = 0
-        
-        for i in range(0, len(sentences), 2):
-            sentence = sentences[i]
-            separator = sentences[i+1] if i+1 < len(sentences) else ""
-            sentence_full = sentence + separator
-            sentence_size = len(sentence_full)
-            
+
+        for sentence_text in sentences:
+            sentence_size = len(sentence_text)
+
             if current_size + sentence_size > CHUNK_SIZE and current_text:
-                chunk_text = ''.join(current_text)
-                chunks.append(self._create_chunk(chunk_text, len(chunks), para_idx, para_idx))
-                
-                # Overlap: keep last sentence
-                if CHUNK_OVERLAP > 0:
-                    current_text = [current_text[-1], sentence_full]
-                    current_size = len(current_text[-1]) + sentence_size
+                chunk_text = ' '.join(current_text).strip()
+                if chunk_text:
+                    chunks.append(self._create_chunk(chunk_text, len(chunks), para_idx, para_idx))
+
+                if CHUNK_OVERLAP > 0 and current_text:
+                    last_sentence = current_text[-1]
+                    current_text = [last_sentence, sentence_text]
+                    current_size = len(' '.join(current_text))
                 else:
-                    current_text = [sentence_full]
+                    current_text = [sentence_text]
                     current_size = sentence_size
             else:
-                current_text.append(sentence_full)
+                current_text.append(sentence_text)
                 current_size += sentence_size
-        
+
         if current_text:
-            chunk_text = ''.join(current_text)
-            chunks.append(self._create_chunk(chunk_text, len(chunks), para_idx, para_idx))
-        
+            chunk_text = ' '.join(current_text).strip()
+            if chunk_text:
+                chunks.append(self._create_chunk(chunk_text, len(chunks), para_idx, para_idx))
+
         return chunks
 
     def _create_chunk(self, text: str, idx: int, start_ref: int, end_ref: int) -> Chunk:
@@ -330,9 +348,7 @@ class SUTDocumentChunker:
 
     def _is_section_header(self, line: str) -> bool:
         """Satırın madde başı olup olmadığını kontrol eder."""
-        # Örnek: "4.2.28", "4.2.28.A", "4.2.28.C"
-        pattern = r'^\d+\.\d+\.\d+(\.\w+)?'
-        return bool(re.match(pattern, line.strip()))
+        return bool(self._normalize_section_token(line.strip()))
 
     def _get_overlap_lines(self, lines: List[str], overlap_chars: int) -> List[str]:
         """Overlap için gerekli satırları döndürür."""
@@ -346,6 +362,111 @@ class SUTDocumentChunker:
             total_chars += len(line)
 
         return overlap_lines
+
+    def _normalize_section_token(self, text: str) -> str:
+        """Satırdaki ilk section benzeri token'ı normalize eder."""
+        if not text:
+            return ""
+
+        first_token = text.strip().split()[0].rstrip(':;,')
+        if not first_token:
+            return ""
+
+        parts = first_token.split('.')
+        if len(parts) < 3:
+            return ""
+
+        numeric_parts = parts[:3]
+        if not all(part.isdigit() for part in numeric_parts):
+            return ""
+
+        remainder = parts[3:]
+        if remainder and not all(segment.isalnum() for segment in remainder):
+            return ""
+
+        normalized = '.'.join(numeric_parts)
+        if remainder:
+            normalized += '.' + '.'.join(remainder)
+        return normalized
+
+    def _split_sentences(self, paragraph: str) -> List[str]:
+        """Basit cümle bölme yardımcı metodu."""
+        sentences: List[str] = []
+        start = 0
+        length = len(paragraph)
+
+        for idx, char in enumerate(paragraph):
+            if char in '.?!':
+                next_idx = idx + 1
+                while next_idx < length and paragraph[next_idx] in ' \t\n\r':
+                    next_idx += 1
+                sentence = paragraph[start:next_idx].strip()
+                if sentence:
+                    sentences.append(sentence)
+                start = next_idx
+
+        if start < length:
+            tail = paragraph[start:].strip()
+            if tail:
+                sentences.append(tail)
+
+        return sentences if sentences else [paragraph.strip()]
+
+    def _tokenize_lower(self, text: str) -> List[str]:
+        """Metni küçük harfli token'lara böler."""
+        tokens: List[str] = []
+        current: List[str] = []
+        for char in text.lower():
+            if char.isalnum() or char in ['ç', 'ğ', 'ı', 'ö', 'ş', 'ü']:
+                current.append(char)
+            else:
+                if current:
+                    tokens.append(''.join(current))
+                    current = []
+        if current:
+            tokens.append(''.join(current))
+        return tokens
+
+    def _tokenize_preserve(self, text: str) -> List[str]:
+        """Metni noktalama işaretlerini koruyarak token'lara böler."""
+        tokens: List[str] = []
+        current: List[str] = []
+        for char in text:
+            if char.isalnum() or char in ['.', '-', '_']:
+                current.append(char)
+            else:
+                if current:
+                    tokens.append(''.join(current))
+                    current = []
+        if current:
+            tokens.append(''.join(current))
+        return tokens
+
+    def _looks_like_icd_code(self, token: str) -> bool:
+        """Basit kontrollerle ICD koduna benzerliği denetler."""
+        if len(token) < 3:
+            return False
+        first = token[0]
+        if not first.isalpha() or not first.isupper():
+            return False
+
+        idx = 1
+        digits = []
+        while idx < len(token) and token[idx].isdigit():
+            digits.append(token[idx])
+            idx += 1
+
+        if len(digits) < 2:
+            return False
+
+        if idx == len(token):
+            return True
+
+        if token[idx] != '.':
+            return False
+
+        decimal_part = token[idx + 1:]
+        return decimal_part.isdigit() and len(decimal_part) > 0
 
     def _enrich_metadata(self, chunk_text: str, start_line: int, end_line: int) -> ChunkMetadata:
         """Chunk için metadata oluşturur."""
@@ -380,9 +501,9 @@ class SUTDocumentChunker:
         """Metinden section numarasını çıkarır."""
         lines = text.split('\n')
         for line in lines[:5]:  # İlk 5 satırda ara
-            match = re.search(r'(\d+\.\d+\.\d+(?:\.\w+)?)', line.strip())
-            if match:
-                return match.group(1)
+            token = self._normalize_section_token(line.strip())
+            if token:
+                return token
         return ""
 
     def _extract_topic(self, text: str) -> str:
@@ -396,45 +517,53 @@ class SUTDocumentChunker:
 
     def _extract_etkin_maddeler(self, text: str) -> List[str]:
         """Metinden etkin maddeleri çıkarır."""
-        # Comprehensive Turkish drug patterns - optimized for single pass
-        drug_patterns = [
-            # Statins & lipid medications
-            r'\b(ezetimib|statin|atorvastatin|rosuvastatin|simvastatin|niasin)\b',
-            # Beta blockers & cardiovascular
-            r'\b(metoprolol|bisoprolol|carvedilol|clopidogrel|aspirin|warfarin)\b',
-            # MS medications
-            r'\b(interferon|glatiramer|teriflunomid|dimetil fumarat|fingolimod|natalizumab|alemtuzumab|okrelizumab|kladribin|fampiridin)\b',
-            # Pulmonary hypertension
-            r'\b(iloprost|bosentan|masitentan|sildenafil|riociguat|seleksipag|tadalafil|epoprostenol|treprostinil|ambrisentan)\b',
-            # Ophthalmology (Anti-VEGF)
-            r'\b(bevacizumab|ranibizumab|aflibersept|deksametazon|verteporfin)\b',
-            # Hormones
-            r'\b(dienogest|progesteron|östrojen|östradiol|tibolon)\b',
-            # Other patterns with Turkish suffixes
-            r'\b(\w+mab|\w+stat|\w+pril|e?vok?umab|prokumab)\b',
-        ]
+        base_terms = {
+            "ezetimib", "statin", "atorvastatin", "rosuvastatin", "simvastatin", "niasin",
+            "metoprolol", "bisoprolol", "carvedilol", "clopidogrel", "aspirin", "warfarin",
+            "interferon", "glatiramer", "teriflunomid", "dimetil", "fumarat", "fingolimod",
+            "natalizumab", "alemtuzumab", "okrelizumab", "kladribin", "fampiridin",
+            "iloprost", "bosentan", "masitentan", "sildenafil", "riociguat", "seleksipag",
+            "tadalafil", "epoprostenol", "treprostinil", "ambrisentan",
+            "bevacizumab", "ranibizumab", "aflibersept", "deksametazon", "verteporfin",
+            "dienogest", "progesteron", "östrojen", "östradiol", "tibolon",
+            "evokumab", "prokumab"
+        }
 
-        etkin_maddeler = []
-        text_lower = text.lower()
+        suffixes = ("mab", "stat", "pril")
 
-        # Single pass through all patterns
-        for pattern in drug_patterns:
-            matches = re.findall(pattern, text_lower)
-            etkin_maddeler.extend(matches)
+        tokens = self._tokenize_lower(text)
+        etkin_maddeler: Dict[str, None] = {}
 
-        return list(set(etkin_maddeler))  # Remove duplicates
+        for token in tokens:
+            if token in base_terms:
+                etkin_maddeler[token] = None
+                continue
+
+            for suffix in suffixes:
+                if token.endswith(suffix) and len(token) > len(suffix) + 1:
+                    etkin_maddeler[token] = None
+                    break
+
+        return list(etkin_maddeler.keys())
 
     def _extract_keywords(self, text: str) -> List[str]:
         """Metinden önemli anahtar kelimeleri çıkarır."""
         keywords = []
 
-        # Tanı kodları
-        diagnosis_matches = re.findall(r'\b[A-Z]\d{2}(?:\.\d+)?\b', text)
-        keywords.extend(diagnosis_matches)
+        tokens_preserve = self._tokenize_preserve(text)
+
+        # Tanı kodları (ICD-10 benzeri)
+        for token in tokens_preserve:
+            candidate = token.strip(',.')
+            if self._looks_like_icd_code(candidate):
+                keywords.append(candidate)
 
         # Yaş, süre gibi sayısal değerler
-        age_matches = re.findall(r'\b(\d{1,3})\s*(yaş|ay|hafta|yıl)\b', text.lower())
-        keywords.extend([f"{num}{unit}" for num, unit in age_matches])
+        words = self._tokenize_lower(text)
+        units = {"yaş", "ay", "hafta", "yıl"}
+        for idx in range(len(words) - 1):
+            if words[idx].isdigit() and words[idx + 1] in units:
+                keywords.append(f"{words[idx]}{words[idx + 1]}")
 
         # Özel terimler
         special_terms = [

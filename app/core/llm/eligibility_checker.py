@@ -1,7 +1,7 @@
 """Main eligibility checker using LLM."""
 
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from app.models.report import Drug, Diagnosis, PatientInfo, DoctorInfo
 from app.models.eligibility import EligibilityResult, Condition
@@ -213,14 +213,12 @@ class EligibilityChecker:
                 
                 # Try to extract partial information from raw text
                 if raw_response:
-                    # Extract status if present
-                    import re
-                    status_match = re.search(r'"status"\s*:\s*"(ELIGIBLE|NOT_ELIGIBLE|CONDITIONAL)"', raw_response)
-                    status = status_match.group(1) if status_match else 'CONDITIONAL'
-                    
-                    # Extract explanation if present
-                    explanation_match = re.search(r'"explanation"\s*:\s*"([^"]+)"', raw_response, re.DOTALL)
-                    explanation = explanation_match.group(1)[:500] if explanation_match else 'Yanıt kısmi/hatalı olabilir.'
+                    status_candidate = self._extract_string_field(raw_response, "status")
+                    status_upper = (status_candidate or '').upper()
+                    status = status_upper if status_upper in {"ELIGIBLE", "NOT_ELIGIBLE", "CONDITIONAL"} else 'CONDITIONAL'
+
+                    explanation_candidate = self._extract_string_field(raw_response, "explanation")
+                    explanation = (explanation_candidate or 'Yanıt kısmi/hatalı olabilir.')[:500]
                     
                     return EligibilityResult(
                         drug_name=drug_name,
@@ -421,3 +419,33 @@ Her ilaç için AYRI bir result objesi oluştur. Toplam {len(drugs)} result olma
         except Exception as e:
             self.logger.error(f"Batch eligibility check failed: {e}")
             raise
+
+    def _extract_string_field(self, payload: str, key: str) -> Optional[str]:
+        """Extract simple string values from a JSON-like snippet without regex."""
+        if not payload:
+            return None
+
+        marker = f'"{key}"'
+        idx = payload.find(marker)
+        if idx == -1:
+            return None
+
+        colon_idx = payload.find(':', idx + len(marker))
+        if colon_idx == -1:
+            return None
+
+        first_quote = payload.find('"', colon_idx + 1)
+        if first_quote == -1:
+            return None
+
+        second_quote = first_quote + 1
+        while second_quote < len(payload):
+            candidate_char = payload[second_quote]
+            if candidate_char == '"' and payload[second_quote - 1] != '\\':
+                break
+            second_quote += 1
+
+        if second_quote >= len(payload) or payload[second_quote] != '"':
+            return None
+
+        return payload[first_quote + 1:second_quote]

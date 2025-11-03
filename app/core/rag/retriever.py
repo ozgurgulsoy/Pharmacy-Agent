@@ -66,7 +66,7 @@ class RAGRetriever:
         drug: Drug,
         diagnosis: Optional[Diagnosis] = None,
         patient: Optional[PatientInfo] = None,
-        top_k: int = 5
+        top_k: int = 3
     ) -> Tuple[List[Dict[str, Any]], Dict[str, float]]:
         """
         Bir ilaç için ilgili SUT chunk'larını getirir.
@@ -284,7 +284,7 @@ class RAGRetriever:
         drugs: List[Drug],
         diagnosis: Optional[Diagnosis] = None,
         patient: Optional[PatientInfo] = None,
-        top_k_per_drug: int = 5
+        top_k_per_drug: int = 3
     ) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, Any]]:
         """
         Birden fazla ilaç için chunk'ları getirir.

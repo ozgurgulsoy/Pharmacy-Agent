@@ -23,7 +23,7 @@ LLM_MODEL: str = os.getenv("LLM_MODEL", "x-ai/grok-4-fast")  # xAI Grok 4 Fast v
 # Note: text-embedding-3-small supports up to 8191 tokens, so we have plenty of room
 CHUNK_SIZE: int = int(os.getenv("CHUNK_SIZE", "2048"))  # ~512 tokens - captures complete subsections with context
 CHUNK_OVERLAP: int = int(os.getenv("CHUNK_OVERLAP", "256"))  # ~64 tokens (12.5%) - prevents context fragmentation
-TOP_K_CHUNKS: int = int(os.getenv("TOP_K_CHUNKS", "5"))  # Reduced to 5 for optimal balance
+TOP_K_CHUNKS: int = int(os.getenv("TOP_K_CHUNKS", "3"))  # Reduced to 3 to prioritize highest-signal chunks
 
 # Performance Settings
 ENABLE_STREAMING: bool = os.getenv("ENABLE_STREAMING", "true").lower() == "true"

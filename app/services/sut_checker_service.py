@@ -14,7 +14,12 @@ from app.core.llm.openai_client import OpenAIClientWrapper
 from app.core.llm.eligibility_checker import EligibilityChecker
 from app.models.report import ParsedReport
 from app.models.eligibility import EligibilityResult
-from app.config.settings import OPENAI_API_KEY, FAISS_INDEX_PATH, FAISS_METADATA_PATH
+from app.config.settings import (
+    OPENAI_API_KEY,
+    FAISS_INDEX_PATH,
+    FAISS_METADATA_PATH,
+    TOP_K_CHUNKS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +91,7 @@ class SUTCheckerService:
     def check_eligibility(
         self,
         report_text: str,
-        top_k: int = 5
+        top_k: int = TOP_K_CHUNKS
     ) -> Dict[str, Any]:
         """
         Complete eligibility check workflow.
@@ -141,7 +146,7 @@ class SUTCheckerService:
         self,
         drug_name: str,
         diagnosis_code: str = None,
-        top_k: int = 5
+        top_k: int = TOP_K_CHUNKS
     ) -> List[Dict[str, Any]]:
         """
         Check eligibility for a single drug (useful for quick lookups).

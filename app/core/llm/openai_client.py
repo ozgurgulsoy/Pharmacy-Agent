@@ -157,25 +157,13 @@ class OpenAIClientWrapper:
                 if attempt < max_retries:
                     # Try to fix common JSON issues
                     if response_text:
-                        # Try to extract JSON from markdown code blocks
-                        import re
-                        json_match = re.search(r'```(?:json)?\s*(\{.*\})\s*```', response_text, re.DOTALL)
-                        if json_match:
+                        candidate = self._extract_json_snippet(response_text)
+                        if candidate:
                             try:
-                                return json.loads(json_match.group(1))
-                            except:
+                                return json.loads(candidate)
+                            except Exception:
                                 pass
-                        
-                        # Try to find first { and last } to extract JSON
-                        first_brace = response_text.find('{')
-                        last_brace = response_text.rfind('}')
-                        if first_brace >= 0 and last_brace > first_brace:
-                            try:
-                                extracted = response_text[first_brace:last_brace + 1]
-                                return json.loads(extracted)
-                            except:
-                                pass
-                    
+
                     self.logger.info(f"Retrying request (attempt {attempt + 2}/{max_retries + 1})...")
                     continue
                 else:
@@ -208,3 +196,26 @@ class OpenAIClientWrapper:
         except Exception as e:
             self.logger.error(f"Embedding creation error: {e}")
             raise
+
+    def _extract_json_snippet(self, text: str) -> Optional[str]:
+        """Attempt to recover a JSON object from a free-form response."""
+        if not text:
+            return None
+
+        fence = "```"
+        if fence in text:
+            first = text.find(fence)
+            second = text.find(fence, first + len(fence))
+            if second != -1:
+                snippet = text[first + len(fence):second].strip()
+                if snippet.lower().startswith("json"):
+                    snippet = snippet[4:].lstrip()
+                if snippet:
+                    return snippet
+
+        first_brace = text.find('{')
+        last_brace = text.rfind('}')
+        if first_brace != -1 and last_brace > first_brace:
+            return text[first_brace:last_brace + 1].strip()
+
+        return None

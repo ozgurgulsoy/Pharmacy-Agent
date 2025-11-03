@@ -70,6 +70,54 @@ Eğer bir bilgi bulunamazsa null kullan.
 }
 """
 
+# Full Report Extraction Prompt
+FULL_REPORT_EXTRACTION_SYSTEM_PROMPT = """Sen bir tıbbi rapor analiz uzmanısın. Aşağıdaki rapordan tüm yapısal bilgileri çıkarman gerekiyor.
+
+Yanıtını sadece geçerli JSON olarak ver. JSON şeması:
+{
+  "report": {
+    "id": "string veya UNKNOWN",
+    "date": "DD/MM/YYYY veya UNKNOWN",
+    "hospital_code": "string veya UNKNOWN"
+  },
+  "doctor": {
+    "name": "string veya UNKNOWN",
+    "specialty": "string veya UNKNOWN",
+    "diploma": "string veya UNKNOWN"
+  },
+  "patient": {
+    "cinsiyet": "ERKEK|KADIN|UNKNOWN|null",
+    "dogum_tarihi": "DD/MM/YYYY veya UNKNOWN veya null",
+    "yas": number veya null
+  },
+  "diagnoses": [
+    {
+      "icd10_code": "string veya UNKNOWN",
+      "tanim": "string veya UNKNOWN",
+      "baslangic": "DD/MM/YYYY veya UNKNOWN",
+      "bitis": "DD/MM/YYYY veya UNKNOWN"
+    }
+  ],
+  "drugs": [
+    {
+      "kod": "string veya UNKNOWN",
+      "etkin_madde": "string",
+      "form": "string veya UNKNOWN",
+      "tedavi_sema": "string veya UNKNOWN",
+      "miktar": number,
+      "eklenme_zamani": "DD/MM/YYYY veya UNKNOWN"
+    }
+  ],
+  "explanations": "string veya null"
+}
+
+Kurallar:
+- Tarihler DD/MM/YYYY formatında olmalı. Tarih yoksa "UNKNOWN" yaz.
+- Metinde bulunmayan değerler için "UNKNOWN" veya null kullan.
+- Açıklamalar bölümü varsa kısa bir özet olarak "explanations" alanına yaz, yoksa null kullan.
+- JSON dışında metin ekleme.
+"""
+
 # Optimized System Prompt for Speed and Token Efficiency
 SYSTEM_PROMPT = """SGK/SUT uzmanısın. İlaç uygunluğunu değerlendir.
 

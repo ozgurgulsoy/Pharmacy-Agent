@@ -19,7 +19,12 @@ from rich import print as rprint
 
 from openai import OpenAI
 
-from app.config.settings import OPENAI_API_KEY, FAISS_INDEX_PATH, FAISS_METADATA_PATH
+from app.config.settings import (
+    OPENAI_API_KEY,
+    FAISS_INDEX_PATH,
+    FAISS_METADATA_PATH,
+    TOP_K_CHUNKS,
+)
 from app.core.parsers.input_parser import InputParser
 from app.core.rag.faiss_store import FAISSVectorStore
 from app.core.rag.retriever import RAGRetriever
@@ -143,7 +148,7 @@ class PharmacyCLI:
                     drugs=parsed_report.drugs,
                     diagnosis=parsed_report.diagnoses[0] if parsed_report.diagnoses else None,
                     patient=parsed_report.patient,
-                    top_k_per_drug=5
+                    top_k_per_drug=TOP_K_CHUNKS
                 )
                 timings['retrieval'] = (time.time() - retrieval_start) * 1000
                 timings['retrieval_per_drug'] = timings['retrieval'] / len(parsed_report.drugs) if parsed_report.drugs else 0
