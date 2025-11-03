@@ -1,32 +1,48 @@
-"""Embeddings generation utilities using OpenAI."""
+"""Embeddings generation utilities using OpenAI or OpenRouter."""
 
 import logging
 from typing import List, Dict, Any
 from openai import OpenAI
 
 from app.models.eligibility import Chunk
-from app.config.settings import EMBEDDING_MODEL, EMBEDDING_DIMENSION
+from app.config.settings import (
+    EMBEDDING_MODEL, 
+    EMBEDDING_DIMENSION, 
+    EMBEDDING_PROVIDER,
+    OPENROUTER_API_KEY,
+    OPENROUTER_BASE_URL,
+    OPENAI_API_KEY
+)
 
 logger = logging.getLogger(__name__)
 
 
 class EmbeddingGenerator:
-    """Embeddings generator using OpenAI."""
+    """Embeddings generator using OpenAI or OpenRouter."""
 
-    def __init__(self, client: OpenAI):
+    def __init__(self, client: OpenAI = None):
         """
         Initialize the embedding generator.
         
         Args:
-            client: OpenAI client
+            client: OpenAI client (optional, will create based on provider)
         """
-        self.client = client
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.logger.info(f"Using OpenAI embeddings with model: {EMBEDDING_MODEL}")
+        
+        # Determine which client to use based on provider
+        if EMBEDDING_PROVIDER == "openrouter":
+            self.client = OpenAI(
+                api_key=OPENROUTER_API_KEY,
+                base_url=OPENROUTER_BASE_URL
+            )
+            self.logger.info(f"✅ Using OpenRouter embeddings with model: {EMBEDDING_MODEL} (dimension: {EMBEDDING_DIMENSION})")
+        else:
+            self.client = client or OpenAI(api_key=OPENAI_API_KEY)
+            self.logger.info(f"✅ Using OpenAI embeddings with model: {EMBEDDING_MODEL} (dimension: {EMBEDDING_DIMENSION})")
     
     def _create_embedding(self, text: str) -> List[float]:
         """
-        Create embedding using OpenAI.
+        Create embedding using configured provider.
         
         Args:
             text: Text to embed
@@ -35,14 +51,26 @@ class EmbeddingGenerator:
             Embedding vector
         """
         try:
+            # Create embedding (OpenRouter's Qwen3 returns 4096 dimensions by default)
             response = self.client.embeddings.create(
                 model=EMBEDDING_MODEL,
                 input=text,
                 encoding_format="float"
             )
-            return response.data[0].embedding
+            
+            embedding = response.data[0].embedding
+            
+            # Verify dimension
+            if len(embedding) != EMBEDDING_DIMENSION:
+                self.logger.warning(
+                    f"⚠️ Dimension mismatch! Expected {EMBEDDING_DIMENSION}, got {len(embedding)}. "
+                    f"Update EMBEDDING_DIMENSION in .env to {len(embedding)}"
+                )
+            
+            return embedding
+            
         except Exception as e:
-            self.logger.error(f"Error creating OpenAI embedding: {e}")
+            self.logger.error(f"Error creating embedding: {e}")
             raise
 
     def create_embeddings(self, chunks: List[Chunk]) -> List[Dict[str, Any]]:

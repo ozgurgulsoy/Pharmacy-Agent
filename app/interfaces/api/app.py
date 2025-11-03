@@ -76,20 +76,8 @@ class EligibilityResponse(BaseModel):
     warnings: list[str]
 
 
-class ReportInfoResponse(BaseModel):
-    """Report information response."""
-    report_id: str
-    date: str
-    doctor_name: str
-    doctor_specialty: str
-    diagnosis_code: str | None
-    diagnosis_name: str | None
-    drug_count: int
-
-
 class AnalysisResponse(BaseModel):
     """Complete analysis response."""
-    report_info: ReportInfoResponse
     results: list[EligibilityResponse]
     performance: Dict[str, float]
 
@@ -178,16 +166,6 @@ class PharmacyAPI:
         timings['total'] = (time.time() - total_start) * 1000
 
         # Build response
-        report_info = ReportInfoResponse(
-            report_id=parsed_report.report_id,
-            date=str(parsed_report.date),
-            doctor_name=parsed_report.doctor.name,
-            doctor_specialty=parsed_report.doctor.specialty,
-            diagnosis_code=parsed_report.diagnoses[0].icd10_code if parsed_report.diagnoses else None,
-            diagnosis_name=parsed_report.diagnoses[0].tanim if parsed_report.diagnoses else None,
-            drug_count=len(parsed_report.drugs)
-        )
-
         eligibility_results = [
             EligibilityResponse(
                 drug_name=r.drug_name,
@@ -209,7 +187,6 @@ class PharmacyAPI:
         ]
 
         return AnalysisResponse(
-            report_info=report_info,
             results=eligibility_results,
             performance=timings
         )

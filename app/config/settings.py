@@ -16,8 +16,9 @@ LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "openrouter")
 OPENROUTER_BASE_URL: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 
 # Model Settings
-EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-LLM_MODEL: str = os.getenv("LLM_MODEL", "x-ai/grok-4-fast")  # xAI Grok 4 Fast via OpenRouter
+EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "qwen/qwen3-embedding-8b")  # Qwen3 Embedding 8B via OpenRouter - Türkçe destekli
+EMBEDDING_DIMENSION: int = int(os.getenv("EMBEDDING_DIMENSION", "4096"))  # Qwen3 default dimension
+LLM_MODEL: str = os.getenv("LLM_MODEL", "google/gemini-2.5-flash-lite-preview-09-2025")  # Google Gemini 2.5 Flash Lite via OpenRouter
 
 # Chunk Settings - Optimized for SUT regulatory documents with hierarchical structure
 # Note: text-embedding-3-small supports up to 8191 tokens, so we have plenty of room
@@ -46,8 +47,10 @@ PRESERVE_PARAGRAPHS: bool = os.getenv("PRESERVE_PARAGRAPHS", "true").lower() == 
 # Language Settings
 OUTPUT_LANGUAGE: str = os.getenv("OUTPUT_LANGUAGE", "turkish")
 
+# Embedding Settings
+EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "openrouter")  # "openrouter" or "openai"
+
 # FAISS Settings
-EMBEDDING_DIMENSION: int = int(os.getenv("EMBEDDING_DIMENSION", "1536"))  # text-embedding-3-small dimension
 FAISS_INDEX_PATH: str = "data/faiss_index"
 FAISS_METADATA_PATH: str = "data/faiss_metadata.json"
 
@@ -65,9 +68,13 @@ def validate_config() -> None:
         if not OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY environment variable is required when using OpenAI")
     
-    # Always need OpenAI key for embeddings
-    if not OPENAI_API_KEY:
-        raise ValueError("OPENAI_API_KEY environment variable is required for embeddings")
+    # Check embedding provider
+    if EMBEDDING_PROVIDER == "openrouter":
+        if not OPENROUTER_API_KEY:
+            raise ValueError("OPENROUTER_API_KEY environment variable is required for embeddings via OpenRouter")
+    elif EMBEDDING_PROVIDER == "openai":
+        if not OPENAI_API_KEY:
+            raise ValueError("OPENAI_API_KEY environment variable is required for OpenAI embeddings")
 
 # Call validation on import
 validate_config()

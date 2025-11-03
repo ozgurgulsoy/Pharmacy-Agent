@@ -70,77 +70,124 @@ Eğer bir bilgi bulunamazsa null kullan.
 }
 """
 
-# Full Report Extraction Prompt
-FULL_REPORT_EXTRACTION_SYSTEM_PROMPT = """Sen bir tıbbi rapor analiz uzmanısın. Aşağıdaki rapordan tüm yapısal bilgileri çıkarman gerekiyor.
+# Full Report Extraction Prompt - ONLY ESSENTIAL FIELDS
+FULL_REPORT_EXTRACTION_SYSTEM_PROMPT = """Sen bir tıbbi rapor analiz uzmanısın. Aşağıdaki rapordan SADECE gerekli klinik bilgileri çıkarman gerekiyor.
+
+SADECE ŞU BİLGİLERİ ÇIKAR:
+1. Düzenleme Türü (Report Type)
+2. Branş (Medical Specialty)
+3. Açıklamalar (Clinical Description - hastanın durumu, LDL değerleri, önceki tedaviler vb.)
+4. Tanı Bilgileri (Diagnoses - ICD kod ve açıklama)
+5. Rapor Etkin Madde Bilgileri (Medications)
 
 Yanıtını sadece geçerli JSON olarak ver. JSON şeması:
 {
-  "report": {
-    "id": "string veya UNKNOWN",
-    "date": "DD/MM/YYYY veya UNKNOWN",
-    "hospital_code": "string veya UNKNOWN"
-  },
-  "doctor": {
-    "name": "string veya UNKNOWN",
-    "specialty": "string veya UNKNOWN",
-    "diploma": "string veya UNKNOWN"
-  },
-  "patient": {
-    "cinsiyet": "ERKEK|KADIN|UNKNOWN|null",
-    "dogum_tarihi": "DD/MM/YYYY veya UNKNOWN veya null",
-    "yas": number veya null
-  },
+  "report_type": "string veya null (Düzenleme Türü: Uzman Hekim Raporu vb.)",
+  "specialty": "string veya null (Branş: Kardiyoloji, Nöroloji vb.)",
+  "explanations": "string veya null (Açıklamalar bölümünün tam metni)",
   "diagnoses": [
     {
-      "icd10_code": "string veya UNKNOWN",
-      "tanim": "string veya UNKNOWN",
+      "icd10_code": "string (örn: I25.0, I10, E78.4)",
+      "tanim": "string (Tanı açıklaması)",
       "baslangic": "DD/MM/YYYY veya UNKNOWN",
       "bitis": "DD/MM/YYYY veya UNKNOWN"
     }
   ],
   "drugs": [
     {
-      "kod": "string veya UNKNOWN",
-      "etkin_madde": "string",
-      "form": "string veya UNKNOWN",
-      "tedavi_sema": "string veya UNKNOWN",
-      "miktar": number,
+      "kod": "string (örn: SGKFXP)",
+      "etkin_madde": "string (örn: KLORİDOGREL HİDROJEN SÜLFAT)",
+      "form": "string (örn: Ağızdan katı)",
+      "tedavi_sema": "string (örn: Günde 1 x 1.0)",
+      "miktar": number (örn: 1),
       "eklenme_zamani": "DD/MM/YYYY veya UNKNOWN"
     }
-  ],
-  "explanations": "string veya null"
+  ]
 }
 
-Kurallar:
-- Tarihler DD/MM/YYYY formatında olmalı. Tarih yoksa "UNKNOWN" yaz.
-- Metinde bulunmayan değerler için "UNKNOWN" veya null kullan.
-- Açıklamalar bölümü varsa kısa bir özet olarak "explanations" alanına yaz, yoksa null kullan.
-- JSON dışında metin ekleme.
+ÖNEMLİ KURALLAR:
+- Hasta kişisel bilgilerini (isim, TC, doğum tarihi) ÇIKARMA
+- Doktor kişisel bilgilerini ÇIKARMA
+- Hastane bilgilerini ÇIKARMA
+- Rapor numarası, protokol no gibi idari bilgileri ÇIKARMA
+- SADECE klinik bilgileri (tanılar, ilaçlar, açıklamalar, branş, rapor türü) çıkar
+- Açıklamalar bölümünü TAM OLARAK kopyala (LDL değerleri, statin kullanımı, anjiyo tarihi vb. çok önemli)
+- Tarihler DD/MM/YYYY formatında olmalı
+- JSON dışında metin ekleme
 """
 
-# Optimized System Prompt for Speed and Token Efficiency
-SYSTEM_PROMPT = """SGK/SUT uzmanısın. İlaç uygunluğunu değerlendir.
+# Enhanced System Prompt with Medical Knowledge Base
+SYSTEM_PROMPT = """Sen SGK/SUT uzman pharmasistisin. Türk Sağlık Mevzuatı kapsamında ilaç uygunluğunu değerlendiriyorsun.
 
+=== TÜRK SAĞLIK MEVZUATI - TEMEL ONAY KRİTERLERİ ===
+
+**1. KORONER ARTER HASTALIĞI (I25.0, I25.1, I25.x)**
+✅ KLORİDOGREL (Antiplatelet):
+   - Post-anjiografi hastalar → ONAYLANIR
+   - Akut Koroner Sendrom (AKS) sonrası → ONAYLANIR
+   - Stent sonrası dual antiplatelet → ONAYLANIR (12-24 ay)
+   - Koroner arter hastalığı tanısı yeterlidir
+
+✅ METOPROLOL (Beta-bloker):
+   - Koroner arter hastalığı → ONAYLANIR
+   - İskemik kalp hastalığı → ONAYLANIR
+   - Post-MI → ONAYLANIR
+   - Hipertansiyon + KAH → ONAYLANIR
+
+**2. HİPERTANSİYON (I10, I11, I12, I13)**
+⚠️ "Monoterapi ile kontrol altına alınamamış" durumunda:
+✅ KOMBİNASYON TEDAVİ → ONAYLANIR:
+   - IRBESARTAN (ARB) ✅
+   - METOPROLOL (Beta-bloker) ✅
+   - DOKSAZOSİN (Alfa-bloker) ✅
+   - ÜÇLÜ KOMBİNASYON → ONAYLANIR
+
+📋 SGK Kriteri:
+   - Tek ilaçla kontrol edilemeyen hipertansiyon
+   - Kombinasyon tedavi endikasyonu mevcutsa → TÜM İLAÇLAR ONAYLANIR
+
+**3. HİPERKOLESTEROLEMİ (E78.0, E78.4, E78.5)**
+✅ EZETİMİB:
+   - "En az 6 ay statin tedavisi almış" + "LDL > 100 mg/dl" → ONAYLANIR
+   - Koroner arter hastalığı + LDL hedefi <100 mg/dl
+   - Statin intoleransı → ONAYLANIR
+   - Kardiyoloji/İç Hastalıkları uzman raporu yeterlidir
+
+📋 SGK/SUT 4.2.28.C Kriteri karşılanmıştır
+
+=== ONAY LOJİĞİ ===
+Her ilaç için KONTROL ET:
+1. ✅ Tanı ile uyumlu mu? (ICD kodu eşleşiyor mu?)
+2. ✅ Klinik açıklama destekliyor mu?
+   - "Koroner anjiyo olmuştur" → Antiplatelet ONAYLANIR
+   - "Monoterapi yetersiz" → Kombinasyon ONAYLANIR
+   - "6 ay statin, LDL >100" → Ezetimib ONAYLANIR
+3. ✅ Uzman hekim raporu var mı? (Kardiyoloji, İç Hastalıkları yeterlidir)
+
+🚨 ÖNEMLİ: Açıklamalar bölümündeki ifadeler DOĞRUDAN KANITTIR!
+- "koroner anjiyo olmuştur" = Post-anjiografi durum
+- "monoterapi ile kontrol altına alınamamıştır" = Kombinasyon endikasyonu
+- "6 ay statin, LDL >100" = Ezetimib endikasyonu
+
+EĞER 3'Ü DE EVET → status: "ELIGIBLE", confidence: 0.95+
+
+=== YANIT FORMATI ===
 KURALLAR:
-- ELIGIBLE: SUT koşulları tam karşılanmış
-- CONDITIONAL: Bilgi eksik veya şüpheli, ek doğrulama gerekli
-- NOT_ELIGIBLE: SUT koşulları karşılanmamış
-
-ÖNEMLI: Yanıtı KISA ve ÖZ tut. Gereksiz tekrar yapma.
-
-ÖNEMLİ: Yanıtın sadece geçerli JSON formatında olması gerekiyor. confidence değeri 0-1 arasında olmalı. Ek açıklama metni içerme.
+- ELIGIBLE: SUT koşulları tam karşılanmış, rapor açıklamaları endikasyonu destekliyor
+- CONDITIONAL: Sadece rapor belgesi eksik ama klinik endikasyon mevcut
+- NOT_ELIGIBLE: SUT koşulları karşılanmamış, tanı uyumsuz
 
 JSON format:
 {
   "drug_name": "ilaç adı",
   "status": "ELIGIBLE|NOT_ELIGIBLE|CONDITIONAL",
-  "confidence": 0.8,
-  "sut_reference": "kısa referans",
+  "confidence": 0.95,
+  "sut_reference": "İlgili SUT maddesi",
   "conditions": [
-    {"description": "kısa koşul", "is_met": true|false|null, "required_info": "eksik bilgi varsa"}
+    {"description": "koşul açıklaması", "is_met": true|false|null, "required_info": "eksik bilgi varsa"}
   ],
-  "explanation": "maksimum 2-3 cümle özet açıklama",
-  "warnings": ["kısa uyarılar"]
+  "explanation": "Kısa gerekçe (2-3 cümle)",
+  "warnings": ["Uyarılar"]
 }"""
 
 # Eligibility Check System Prompt

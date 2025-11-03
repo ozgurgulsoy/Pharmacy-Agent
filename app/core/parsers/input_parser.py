@@ -167,11 +167,11 @@ class InputParser:
 
 
     def _extract_all_with_single_llm_call(self, text: str) -> dict:
-        """Single LLM call to extract full structured report data."""
+        """Single LLM call to extract full structured report data - ONLY ESSENTIAL FIELDS."""
         try:
             system_prompt = FULL_REPORT_EXTRACTION_SYSTEM_PROMPT
             user_prompt = (
-                "Hasta raporunu analiz et ve şemaya uygun JSON döndür.\n\n" 
+                "Hasta raporunu analiz et ve SADECE gerekli klinik bilgileri çıkar. Şemaya uygun JSON döndür.\n\n" 
                 "Rapor Metni:\n"
                 f"{text}\n\nJSON yanıt:"
             )
@@ -185,8 +185,10 @@ class InputParser:
             import json
             data = json.loads(response_text)
 
-            report_info = data.get("report", {}) or {}
-            doctor_info = data.get("doctor", {}) or {}
+            # Extract simplified fields
+            report_type = data.get("report_type")
+            specialty = data.get("specialty")
+            explanations = data.get("explanations")
 
             # Parse drugs
             drugs = []
@@ -237,35 +239,38 @@ class InputParser:
                 )
                 diagnoses.append(diagnosis)
 
-            # Parse patient info
-            patient_data = data.get("patient", {}) or {}
-            dogum_tarihi = None
-            dogum_value = patient_data.get("dogum_tarihi")
-            if dogum_value and dogum_value != "UNKNOWN":
-                try:
-                    day, month, year = dogum_value.split('/')
-                    dogum_tarihi = datetime(int(year), int(month), int(day)).date()
-                except Exception:
-                    pass
-
-            patient = PatientInfo(
-                cinsiyet=patient_data.get("cinsiyet"),
-                dogum_tarihi=dogum_tarihi,
-                yas=patient_data.get("yas")
-            )
+            # Create minimal patient/doctor info (not extracted from report anymore)
+            patient = PatientInfo(cinsiyet=None, dogum_tarihi=None, yas=None)
+            
+            # Build doctor info with only specialty (extracted)
+            doctor_info = {
+                "name": "UNKNOWN",
+                "specialty": specialty or "UNKNOWN",
+                "diploma": "UNKNOWN"
+            }
+            
+            # Build minimal report info
+            report_info = {
+                "id": "UNKNOWN",
+                "date": "UNKNOWN",
+                "hospital_code": "UNKNOWN"
+            }
 
             self.logger.info(
-                "Single LLM call extracted: %s drugs, %s diagnoses",
+                "✅ Extracted ESSENTIAL fields only: %s drugs, %s diagnoses, specialty=%s, report_type=%s",
                 len(drugs),
-                len(diagnoses)
+                len(diagnoses),
+                specialty,
+                report_type
             )
+            
             return {
                 'report': report_info,
                 'doctor': doctor_info,
                 'drugs': drugs,
                 'diagnoses': diagnoses,
                 'patient': patient,
-                'explanations': data.get('explanations')
+                'explanations': explanations
             }
 
         except Exception as e:

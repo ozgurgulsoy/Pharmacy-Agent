@@ -15,7 +15,7 @@ AI destekli bir ajan sistemi oluşturulacak:
 - **Çıktı**: Her ilaç için detaylı uygunluk analizi (Türkçe)
 
 ### 1.3 Teknoloji Stack
-- **LLM**: OpenAI GPT-5-mini
+- **LLM**: Google Gemini 2.5 Flash Lite (via OpenRouter)
 - **Vector DB**: FAISS (Local, Fast, Accurate)
 - **Framework**: Python
 - **Interface**: CLI (MVP)
@@ -42,7 +42,7 @@ graph TB
     J --> K[FAISS Vector Store<br/>SUT Chunks]
     K -->|İlgili SUT bölümleri| J
     
-    J --> L[LLM Processor<br/>OpenAI GPT-5-mini]
+    J --> L[LLM Processor<br/>Google Gemini 2.5]
     L --> M[Eligibility Analyzer]
     M --> N[Response Formatter]
     N --> O[CLI Output<br/>Türkçe Sonuçlar]
@@ -157,7 +157,7 @@ class ChunkMetadata:
 **Chunking Kuralları**:
 1. **Madde bazlı**: Her madde (4.2.1, 4.2.2, vb.) ayrı chunk
 2. **Overlap**: 100-200 karakter overlap (bağlam korunması için)
-3. **Chunk Size**: 500-1000 token (GPT-5-mini için optimal)
+3. **Chunk Size**: 500-1000 token (Google Gemini için optimal)
 4. **Metadata Enrichment**: Her chunk'a ilgili ilaç isimleri, tanı kodları eklenir
 
 **Örnek Chunk**:
@@ -325,7 +325,7 @@ sequenceDiagram
     participant P as Parser
     participant R as RAG Engine
     participant V as Pinecone
-    participant L as LLM (GPT-5-mini)
+    participant L as LLM (Gemini 2.5)
     participant O as Output Formatter
     
     E->>C: Rapor metnini yapıştır
@@ -544,9 +544,9 @@ class EligibilityChecker:
         # Construct prompt
         prompt = self._build_prompt(drug, diagnosis, patient, sut_chunks)
         
-        # Call GPT-5-mini
+        # Call Google Gemini
         response = self.client.chat.completions.create(
-            model="gpt-5-mini",
+            model="google/gemini-2.5-flash-lite-preview-09-2025",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt}
@@ -703,7 +703,7 @@ OPENAI_API_KEY=sk-...
 
 # Model settings
 EMBEDDING_MODEL=text-embedding-3-small
-LLM_MODEL=gpt-5-mini
+LLM_MODEL=google/gemini-2.5-flash-lite-preview-09-2025
 CHUNK_SIZE=1000
 CHUNK_OVERLAP=200
 TOP_K_CHUNKS=5

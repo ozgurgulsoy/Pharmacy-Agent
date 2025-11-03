@@ -149,32 +149,9 @@ function showResults() {
 
 // Display results
 function displayResults(data) {
-    displayReportInfo(data.report_info);
     displayDrugResults(data.results);
     displayPerformance(data.performance);
     showResults();
-}
-
-function displayReportInfo(info) {
-    const container = document.getElementById('report-info');
-    
-    const fields = [
-        { label: 'Rapor No', value: info.report_id, icon: 'fa-file-medical' },
-        { label: 'Tarih', value: info.date, icon: 'fa-calendar' },
-        { label: 'Doktor', value: `${info.doctor_name} (${info.doctor_specialty})`, icon: 'fa-user-md' },
-        { label: 'Tanı', value: info.diagnosis_code ? `${info.diagnosis_code} - ${info.diagnosis_name}` : 'Belirtilmemiş', icon: 'fa-stethoscope' },
-        { label: 'İlaç Sayısı', value: info.drug_count, icon: 'fa-pills' },
-    ];
-    
-    container.innerHTML = fields.map(field => `
-        <div class="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg">
-            <i class="fas ${field.icon} text-indigo-600 mt-1"></i>
-            <div>
-                <p class="text-xs text-gray-500 font-medium">${field.label}</p>
-                <p class="text-sm text-gray-800 font-semibold">${field.value}</p>
-            </div>
-        </div>
-    `).join('');
 }
 
 function displayDrugResults(results) {

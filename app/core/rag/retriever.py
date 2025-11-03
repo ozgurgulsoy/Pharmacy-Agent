@@ -337,14 +337,18 @@ class RAGRetriever:
 
             # Create embeddings for uncached queries
             if uncached_queries:
-                # Use OpenAI batch API (much faster than sequential)
+                # Use batch embedding creation (if supported) or sequential
                 self.logger.info(f"Creating batch embeddings for {len(uncached_queries)} uncached queries")
-                response = self.client.embeddings.create(
-                    model=EMBEDDING_MODEL,
-                    input=uncached_queries,
-                    encoding_format="float"
-                )
-                new_embeddings = [item.embedding for item in response.data]
+                
+                try:
+                    # Try batch creation (OpenAI supports, OpenRouter might not)
+                    new_embeddings = []
+                    for query in uncached_queries:
+                        embedding = self.embedding_generator.create_query_embedding(query)
+                        new_embeddings.append(embedding)
+                except Exception as e:
+                    self.logger.error(f"Batch embedding creation failed: {e}")
+                    raise
 
                 # Cache new embeddings
                 for query, embedding in zip(uncached_queries, new_embeddings):
