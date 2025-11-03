@@ -18,7 +18,7 @@ OPENROUTER_BASE_URL: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.
 # Model Settings
 EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "qwen/qwen3-embedding-8b")  # Qwen3 Embedding 8B via OpenRouter - Türkçe destekli
 EMBEDDING_DIMENSION: int = int(os.getenv("EMBEDDING_DIMENSION", "4096"))  # Qwen3 default dimension
-LLM_MODEL: str = os.getenv("LLM_MODEL", "google/gemini-2.5-flash-lite-preview-09-2025")  # Google Gemini 2.5 Flash Lite via OpenRouter
+LLM_MODEL: str = os.getenv("LLM_MODEL", "google/gemini-2.0-flash-001")  # Google Gemini 2.0 Flash via OpenRouter - High quality, fast, cost effective
 
 # Chunk Settings - Optimized for SUT regulatory documents with hierarchical structure
 # Note: text-embedding-3-small supports up to 8191 tokens, so we have plenty of room

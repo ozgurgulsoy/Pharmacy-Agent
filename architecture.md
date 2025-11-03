@@ -15,7 +15,7 @@ AI destekli bir ajan sistemi oluşturulacak:
 - **Çıktı**: Her ilaç için detaylı uygunluk analizi (Türkçe)
 
 ### 1.3 Teknoloji Stack
-- **LLM**: Google Gemini 2.5 Flash Lite (via OpenRouter)
+- **LLM**: Google Gemini 2.0 Flash (via OpenRouter)
 - **Vector DB**: FAISS (Local, Fast, Accurate)
 - **Framework**: Python
 - **Interface**: CLI (MVP)
@@ -42,7 +42,7 @@ graph TB
     J --> K[FAISS Vector Store<br/>SUT Chunks]
     K -->|İlgili SUT bölümleri| J
     
-    J --> L[LLM Processor<br/>Google Gemini 2.5]
+    J --> L[LLM Processor<br/>Google Gemini 2.0]
     L --> M[Eligibility Analyzer]
     M --> N[Response Formatter]
     N --> O[CLI Output<br/>Türkçe Sonuçlar]
@@ -325,7 +325,7 @@ sequenceDiagram
     participant P as Parser
     participant R as RAG Engine
     participant V as Pinecone
-    participant L as LLM (Gemini 2.5)
+    participant L as LLM (Gemini 2.0)
     participant O as Output Formatter
     
     E->>C: Rapor metnini yapıştır
@@ -546,7 +546,7 @@ class EligibilityChecker:
         
         # Call Google Gemini
         response = self.client.chat.completions.create(
-            model="google/gemini-2.5-flash-lite-preview-09-2025",
+            model="google/gemini-2.0-flash-001",
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt}
@@ -703,7 +703,7 @@ OPENAI_API_KEY=sk-...
 
 # Model settings
 EMBEDDING_MODEL=text-embedding-3-small
-LLM_MODEL=google/gemini-2.5-flash-lite-preview-09-2025
+LLM_MODEL=google/gemini-2.0-flash-001
 CHUNK_SIZE=1000
 CHUNK_OVERLAP=200
 TOP_K_CHUNKS=5
