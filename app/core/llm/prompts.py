@@ -199,6 +199,7 @@ USER_PROMPT_TEMPLATE = """💊 İLAÇ: {drug_name}
 🏥 TANI: {diagnosis_name} ({icd_code})
 👤 HASTA: {patient_age}y, {patient_gender}
 👨‍⚕️ DOKTOR: {doctor_specialty}
+📄 RAPOR TÜRÜ: {report_type}
 {explanations}
 
 📋 SUT KURALLARI:
@@ -218,7 +219,8 @@ class PromptBuilder:
         doctor_name: str,
         doctor_specialty: str,
         sut_chunks: List[Dict[str, Any]],
-        explanations: str = None
+        explanations: str = None,
+        report_type: str = None
     ) -> str:
         """
         İlaç uygunluk kontrolü için prompt oluşturur.
@@ -231,6 +233,7 @@ class PromptBuilder:
             doctor_specialty: Doktor branşı
             sut_chunks: İlgili SUT chunk'ları
             explanations: Rapor açıklamaları (LDL değerleri, statin kullanımı vb.)
+            report_type: Rapor türü (Uzman Hekim Raporu, Sağlık Kurulu Raporu vb.)
 
         Returns:
             Formatted prompt
@@ -252,6 +255,7 @@ class PromptBuilder:
             patient_gender=patient.cinsiyet if patient and patient.cinsiyet else "Belirtilmemiş",
             doctor_name=doctor_name,
             doctor_specialty=doctor_specialty,
+            report_type=report_type or "Belirtilmemiş",
             sut_chunks=sut_text,
             explanations=explanations_text
         )

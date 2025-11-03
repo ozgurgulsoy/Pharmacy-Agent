@@ -54,3 +54,4 @@ class ParsedReport:
     patient: PatientInfo
     raw_text: str
     explanations: Optional[str] = None  # Rapor açıklamaları (LDL değerleri, statin kullanımı vb.)
+    report_type: Optional[str] = None   # Rapor türü (Uzman Hekim Raporu, Sağlık Kurulu Raporu vb.)

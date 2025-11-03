@@ -27,7 +27,8 @@ class EligibilityChecker:
         patient: PatientInfo,
         doctor: DoctorInfo,
         sut_chunks: List[Dict[str, Any]],
-        explanations: str = None
+        explanations: str = None,
+        report_type: str = None
     ) -> EligibilityResult:
         """
         Bir ilaç için SGK uygunluğunu kontrol eder.
@@ -39,6 +40,7 @@ class EligibilityChecker:
             doctor: Doktor bilgisi
             sut_chunks: İlgili SUT chunk'ları
             explanations: Rapor açıklamaları
+            report_type: Rapor türü (Uzman Hekim Raporu, Sağlık Kurulu Raporu vb.)
 
         Returns:
             EligibilityResult
@@ -53,7 +55,8 @@ class EligibilityChecker:
             doctor_name=doctor.name,
             doctor_specialty=doctor.specialty,
             sut_chunks=sut_chunks,
-            explanations=explanations
+            explanations=explanations,
+            report_type=report_type
         )
 
         # LLM'den yanıt al
@@ -81,7 +84,8 @@ class EligibilityChecker:
         patient: PatientInfo,
         doctor: DoctorInfo,
         sut_chunks_per_drug: Dict[str, List[Dict[str, Any]]],
-        explanations: str = None
+        explanations: str = None,
+        report_type: str = None
     ) -> List[EligibilityResult]:
         """
         Birden fazla ilaç için uygunluk kontrolü.
@@ -96,6 +100,7 @@ class EligibilityChecker:
             doctor: Doktor bilgisi
             sut_chunks_per_drug: Her ilaç için SUT chunks
             explanations: Rapor açıklamaları
+            report_type: Rapor türü (Uzman Hekim Raporu, Sağlık Kurulu Raporu vb.)
 
         Returns:
             EligibilityResult listesi
@@ -133,7 +138,8 @@ class EligibilityChecker:
                         patient=patient,
                         doctor=doctor,
                         sut_chunks=sut_chunks,
-                        explanations=explanations
+                        explanations=explanations,
+                        report_type=report_type
                     )
                 except Exception as e:
                     self.logger.error(f"Error checking eligibility for {drug.etkin_madde}: {e}")
@@ -161,7 +167,8 @@ class EligibilityChecker:
                 patient=patient,
                 doctor=doctor,
                 sut_chunks_per_drug=sut_chunks_per_drug,
-                explanations=explanations
+                explanations=explanations,
+                report_type=report_type
             )
 
             batch_elapsed = time.time() - batch_start
@@ -189,7 +196,8 @@ class EligibilityChecker:
                         patient=patient,
                         doctor=doctor,
                         sut_chunks=sut_chunks,
-                        explanations=explanations
+                        explanations=explanations,
+                        report_type=report_type
                     )
                 except Exception as inner_e:
                     self.logger.error(f"Error checking eligibility for {drug.etkin_madde}: {inner_e}")
@@ -289,7 +297,8 @@ class EligibilityChecker:
         patient: PatientInfo,
         doctor: DoctorInfo,
         sut_chunks_per_drug: Dict[str, List[Dict[str, Any]]],
-        explanations: str = None
+        explanations: str = None,
+        report_type: str = None
     ) -> List[EligibilityResult]:
         """
         PERFORMANCE OPTIMIZATION: Check all drugs in a single LLM call.
@@ -304,6 +313,7 @@ class EligibilityChecker:
             doctor: Doctor info
             sut_chunks_per_drug: SUT chunks for each drug
             explanations: Report explanations
+            report_type: Report type (Uzman Hekim Raporu, Sağlık Kurulu Raporu vb.)
             
         Returns:
             List of EligibilityResult, one per drug
@@ -314,6 +324,7 @@ class EligibilityChecker:
         from .prompts import SYSTEM_PROMPT
         
         explanations_section = f'📝 RAPOR AÇIKLAMALARI:\n{explanations}\n' if explanations else ''
+        report_type_section = f'📄 RAPOR TÜRÜ: {report_type}\n' if report_type else ''
         
         user_prompt = f"""Aşağıdaki {len(drugs)} ilacın SGK/SUT uygunluğunu AYNI ANDA değerlendir.
 
@@ -323,7 +334,7 @@ class EligibilityChecker:
 - Cinsiyet: {patient.cinsiyet or 'Bilinmiyor'}
 - Doktor: {doctor.name} ({doctor.specialty})
 
-{explanations_section}
+{report_type_section}{explanations_section}
 
 """
 

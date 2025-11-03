@@ -128,7 +128,8 @@ class SUTCheckerService:
             patient=parsed_report.patient,
             doctor=parsed_report.doctor,
             sut_chunks_per_drug=sut_chunks_per_drug,
-            explanations=parsed_report.explanations
+            explanations=parsed_report.explanations,
+            report_type=parsed_report.report_type
         )
         
         total_time = (time.time() - start_time) * 1000  # Convert to ms

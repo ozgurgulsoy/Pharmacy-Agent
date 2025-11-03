@@ -59,6 +59,7 @@ class InputParser:
         diagnoses = all_data.get('diagnoses', []) if isinstance(all_data, dict) else []
         patient = all_data.get('patient', PatientInfo(cinsiyet=None, dogum_tarihi=None, yas=None)) if isinstance(all_data, dict) else PatientInfo(cinsiyet=None, dogum_tarihi=None, yas=None)
         explanations = all_data.get('explanations') if isinstance(all_data, dict) else None
+        report_type = all_data.get('report_type') if isinstance(all_data, dict) else None
 
         report_id = report_info.get('id') if isinstance(report_info, dict) else None
         hospital_code = report_info.get('hospital_code') if isinstance(report_info, dict) else None
@@ -80,10 +81,11 @@ class InputParser:
             drugs=drugs,
             patient=patient,
             raw_text=cleaned_text,
-            explanations=explanations
+            explanations=explanations,
+            report_type=report_type
         )
 
-        self.logger.info(f"Parsed report: {len(drugs)} drugs, {len(diagnoses)} diagnoses")
+        self.logger.info(f"Parsed report: {len(drugs)} drugs, {len(diagnoses)} diagnoses, report_type={report_type}")
         return parsed_report
 
     def validate_input(self, raw_text: str) -> bool:
@@ -270,7 +272,8 @@ class InputParser:
                 'drugs': drugs,
                 'diagnoses': diagnoses,
                 'patient': patient,
-                'explanations': explanations
+                'explanations': explanations,
+                'report_type': report_type
             }
 
         except Exception as e:
