@@ -1,7 +1,7 @@
 """OpenAI client wrapper."""
 
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 import json
 
 from openai import OpenAI
@@ -10,7 +10,8 @@ from app.config.settings import (
     OPENROUTER_API_KEY,
     LLM_MODEL, 
     LLM_PROVIDER,
-    OPENROUTER_BASE_URL
+    OPENROUTER_BASE_URL,
+    OPENROUTER_PROVIDER,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,7 @@ class OpenAIClientWrapper:
         self.provider = provider or LLM_PROVIDER
         self.model = LLM_MODEL
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.provider_preferences: List[str] = []
         
         # Configure client based on provider
         if self.provider == "openrouter":
@@ -38,6 +40,9 @@ class OpenAIClientWrapper:
                 "HTTP-Referer": "https://pharmacy-agent.local",
                 "X-Title": "Pharmacy Agent"
             }
+            self.provider_preferences = self._parse_provider_override(OPENROUTER_PROVIDER)
+            if self.provider_preferences:
+                self.logger.info(f"OpenRouter provider preference order: {self.provider_preferences}")
             self.logger.info(f"Initialized OpenRouter client with model: {self.model}")
         else:
             # Default to OpenAI
@@ -49,6 +54,26 @@ class OpenAIClientWrapper:
             )
             self.extra_headers = {}
             self.logger.info(f"Initialized OpenAI client with model: {self.model}")
+
+    @staticmethod
+    def _parse_provider_override(raw_value: Optional[str]) -> List[str]:
+        """Return a provider preference list from a comma-delimited string."""
+        if not raw_value:
+            return []
+        return [item.strip() for item in raw_value.split(",") if item.strip()]
+
+    def _inject_provider_preferences(self, kwargs: Dict[str, Any]) -> None:
+        """Augment request kwargs with provider preferences."""
+        if not self.provider_preferences:
+            return
+
+        provider_body = {
+            "order": self.provider_preferences,
+            "allow_fallbacks": len(self.provider_preferences) > 1
+        }
+
+        extra_body = kwargs.setdefault("extra_body", {})
+        extra_body["provider"] = provider_body
 
     def chat_completion(
         self,
@@ -75,7 +100,7 @@ class OpenAIClientWrapper:
                 {"role": "user", "content": user_prompt}
             ]
 
-            kwargs = {
+            kwargs: Dict[str, Any] = {
                 "model": self.model,
                 "messages": messages,
             }
@@ -99,6 +124,9 @@ class OpenAIClientWrapper:
             # Add extra headers for OpenRouter
             if hasattr(self, 'extra_headers') and self.extra_headers:
                 kwargs['extra_headers'] = self.extra_headers
+
+            # Force a specific OpenRouter provider when configured
+            self._inject_provider_preferences(kwargs)
             
             api_start = time.time()
             response = self.client.chat.completions.create(**kwargs)

@@ -14,6 +14,7 @@ OPENROUTER_API_KEY: Optional[str] = os.getenv("OPENROUTER_API_KEY")
 # LLM Provider
 LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "openrouter")
 OPENROUTER_BASE_URL: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
+OPENROUTER_PROVIDER: Optional[str] = os.getenv("OPENROUTER_PROVIDER")
 
 # Model Settings
 EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "qwen/qwen3-embedding-8b")  # Qwen3 Embedding 8B via OpenRouter - Türkçe destekli

@@ -1,4 +1,5 @@
 # Pharmacy Agent - SUT Compliance Checker
+
 ## Sistem Mimarisi ve Proje Dokümantasyonu
 
 ---
@@ -6,15 +7,19 @@
 ## 1. PROJE ÖZET
 
 ### 1.1 Problem Tanımı
+
 Türk sağlık sistemi kapsamında, eczacılar hastalardan gelen reçetelerdeki ilaçların SGK (Sosyal Güvenlik Kurumu) tarafından karşılanıp karşılanmayacağını manuel olarak SUT (Sağlık Uygulama Tebliği) dokümanını kontrol ederek belirlemek zorundadır. Bu 15,000+ satırlık dokümanda arama yapmak çok zaman alıcıdır.
 
 ### 1.2 Çözüm
+
 AI destekli bir ajan sistemi oluşturulacak:
+
 - **Girdi**: Hastanın reçete raporu (metin formatında Ctrl+C/Ctrl+V ile)
 - **İşlem**: RAG (Retrieval Augmented Generation) ile SUT dokümanında ilgili kuralları bulma
 - **Çıktı**: Her ilaç için detaylı uygunluk analizi (Türkçe)
 
 ### 1.3 Teknoloji Stack
+
 - **LLM**: Google Gemini 2.0 Flash (via OpenRouter)
 - **Vector DB**: FAISS (Local, Fast, Accurate)
 - **Framework**: Python
@@ -33,24 +38,28 @@ graph TB
     E -->|İlaç Listesi| F[Drug Extractor]
     E -->|Tanı Kodları| G[Diagnosis Extractor]
     E -->|Hasta Bilgileri| H[Patient Info Extractor]
-    
+
     F --> I[Query Builder]
     G --> I
     H --> I
-    
+
     I --> J[RAG Retrieval Engine]
     J --> K[FAISS Vector Store<br/>SUT Chunks]
     K -->|İlgili SUT bölümleri| J
-    
+
     J --> L[LLM Processor<br/>Google Gemini 2.0]
     L --> M[Eligibility Analyzer]
     M --> N[Response Formatter]
     N --> O[CLI Output<br/>Türkçe Sonuçlar]
     O --> A
-    
+
     style K fill:#e1f5ff
     style L fill:#ffe1e1
     style O fill:#e1ffe1
+```
+
+---
+
 ```
 
 ---
@@ -70,24 +79,19 @@ class InputParser:
 ```
 
 **Çıkarılacak Bilgiler**:
-- Rapor numarası ve tarihi
-- Hasta TC Kimlik No (anonim tutulacak)
-- Tesis/Hastane kodu
-- İlaç listesi (Rapor Etkin Madde Bilgileri)
-- Tanı bilgileri (ICD-10 kodları ve açıklamalar)
-- Doktor bilgileri (branş, diploma no)
 
----
+
 
 ### 3.2 Report Analyzer (Rapor Analiz Motoru)
 
 **Alt Modüller**:
 
 #### 3.2.1 Drug Extractor
+
 ```python
 class DrugExtractor:
     def extract_drugs(self, report: ParsedReport) -> List[Drug]
-    
+
 @dataclass
 class Drug:
     kod: str                    # SGKF07
@@ -99,10 +103,11 @@ class Drug:
 ```
 
 #### 3.2.2 Diagnosis Extractor
+
 ```python
 class DiagnosisExtractor:
     def extract_diagnoses(self, report: ParsedReport) -> List[Diagnosis]
-    
+
 @dataclass
 class Diagnosis:
     icd10_code: str           # I25.1
@@ -112,10 +117,11 @@ class Diagnosis:
 ```
 
 #### 3.2.3 Patient Info Extractor
+
 ```python
 class PatientInfoExtractor:
     def extract_patient_info(self, report: ParsedReport) -> PatientInfo
-    
+
 @dataclass
 class PatientInfo:
     cinsiyet: str
@@ -135,7 +141,7 @@ class SUTDocumentProcessor:
     def load_pdf(self, filepath: str) -> str
     def chunk_document(self, text: str) -> List[Chunk]
     def create_embeddings(self, chunks: List[Chunk]) -> List[Embedding]
-    
+
 @dataclass
 class Chunk:
     chunk_id: str
@@ -143,7 +149,7 @@ class Chunk:
     metadata: ChunkMetadata
     start_line: int
     end_line: int
-    
+
 @dataclass
 class ChunkMetadata:
     section: str              # "4.2.28" (madde numarası)
@@ -155,13 +161,15 @@ class ChunkMetadata:
 ```
 
 **Chunking Kuralları**:
+
 1. **Madde bazlı**: Her madde (4.2.1, 4.2.2, vb.) ayrı chunk
 2. **Overlap**: 100-200 karakter overlap (bağlam korunması için)
 3. **Chunk Size**: 500-1000 token (Google Gemini için optimal)
 4. **Metadata Enrichment**: Her chunk'a ilgili ilaç isimleri, tanı kodları eklenir
 
 **Örnek Chunk**:
-```
+
+```text
 Content: "4.2.28.C – Ezetimib içeren mono/kombine ürünler...
 En az 6 ay boyunca statinlerle tedavi edilmiş olmasına rağmen..."
 
@@ -180,6 +188,7 @@ Metadata:
 ### 3.4 RAG Retrieval Engine
 
 **FAISS Index Yapısı**:
+
 ```python
 # Index Configuration
 {
@@ -199,10 +208,11 @@ Metadata:
 ```
 
 **Retrieval Stratejisi**:
+
 ```python
 class RAGRetriever:
     def retrieve_relevant_chunks(
-        self, 
+        self,
         query: str,
         drugs: List[Drug],
         filters: Dict
@@ -217,6 +227,7 @@ class RAGRetriever:
 ```
 
 **Query Construction**:
+
 ```python
 # Örnek: Ezetimib için sorgu
 query = f"""
@@ -241,7 +252,7 @@ filters = {
 
 ```python
 SYSTEM_PROMPT = """
-Sen bir Türk sağlık sistemi uzmanısın. SUT (Sağlık Uygulama Tebliği) dokümantasyonuna 
+Sen bir Türk sağlık sistemi uzmanısın. SUT (Sağlık Uygulama Tebliği) dokümantasyonuna
 göre ilaçların SGK kapsamında olup olmadığını değerlendiriyorsun.
 
 Görevin:
@@ -294,7 +305,7 @@ class Condition:
 ```
 
 **Örnek Çıktı**:
-```
+```text
 ✅ EZETIMIB - SGK KAPSAMINDA
 
 SUT Referans: 4.2.28.C (satır 12528-12550)
@@ -302,7 +313,7 @@ SUT Referans: 4.2.28.C (satır 12528-12550)
 Koşullar:
 ✅ En az 6 ay statin tedavisi gerekli
    → Raporda belirtilmiş: "Monoterapi ile kanbasıncı yeterli oranda kontrol altına alınamıştır"
-   
+
 ⚠️ LDL düzeyi 100 mg/dL üzerinde olmalı
    → Raporda LDL değeri bulunamadı - eczacı doktora danışmalı
 
@@ -327,12 +338,12 @@ sequenceDiagram
     participant V as Pinecone
     participant L as LLM (Gemini 2.0)
     participant O as Output Formatter
-    
+
     E->>C: Rapor metnini yapıştır
     C->>P: Ham metin
     P->>P: Rapor parse et
     P->>R: ParsedReport (ilaçlar, tanılar)
-    
+
     loop Her ilaç için
         R->>V: Vektör sorgusu + metadata filter
         V->>R: Top-k ilgili SUT chunks
@@ -340,7 +351,7 @@ sequenceDiagram
         L->>R: Uygunluk analizi
         R->>O: EligibilityResult
     end
-    
+
     O->>C: Formatlanmış Türkçe sonuç
     C->>E: Ekranda göster
 ```
@@ -348,7 +359,7 @@ sequenceDiagram
 ### 4.2 Örnek Veri Dönüşümü
 
 **1. Raw Input** (Eczacı yapıştırır):
-```
+```text
 Rapor No: 277870
 Hasta: ALİ KAYA
 Tanı: I25.1 Aterosklerotik Kalp Hastalığı
@@ -458,10 +469,10 @@ vector_store.create_index(dimension=1536)
 def index_sut_document(pdf_path: str):
     # 1. PDF → text
     text = extract_text_from_pdf(pdf_path)
-    
+
     # 2. Chunk creation
     chunks = chunk_by_sections(text)
-    
+
     # 3. Create embeddings
     embeddings_data = []
     for chunk in chunks:
@@ -470,7 +481,7 @@ def index_sut_document(pdf_path: str):
             input=chunk.content,
             encoding_format="float"
         )
-        
+
         # 4. Prepare for FAISS
         embeddings_data.append({
             "id": chunk.chunk_id,
@@ -483,7 +494,7 @@ def index_sut_document(pdf_path: str):
                 "end_line": chunk.end_line
             }
         })
-    
+
     # 5. Add to FAISS and save
     vector_store.add_embeddings(embeddings_data)
     vector_store.save()
@@ -496,17 +507,17 @@ class RAGQueryPipeline:
     def __init__(self, vector_store: FAISSVectorStore, openai_client):
         self.vector_store = vector_store
         self.client = openai_client
-    
+
     def query(self, drug: Drug, diagnosis: Diagnosis, patient: PatientInfo):
         # 1. Construct semantic query
         query_text = self._build_query_text(drug, diagnosis, patient)
-        
+
         # 2. Get embedding
         query_embedding = self.client.embeddings.create(
             model="text-embedding-3-small",
             input=query_text
         ).data[0].embedding
-        
+
         # 3. Search with metadata filters
         results = self.vector_store.search(
             query_embedding=query_embedding,
@@ -515,17 +526,17 @@ class RAGQueryPipeline:
                 "drug_related": True
             }
         )
-        
+
         # 4. Filter by drug name (manual filtering)
         drug_matches = [
-            r for r in results 
-            if any(drug.etkin_madde.lower() in em.lower() 
+            r for r in results
+            if any(drug.etkin_madde.lower() in em.lower()
                    for em in r['metadata'].get('etkin_madde', []))
         ]
-        
+
         # 5. Re-rank by relevance
         ranked_chunks = self._rerank(drug_matches if drug_matches else results)
-        
+
         return ranked_chunks[:5]  # Top 5
 ```
 
@@ -540,10 +551,10 @@ class EligibilityChecker:
         patient: PatientInfo,
         sut_chunks: List[Chunk]
     ) -> EligibilityResult:
-        
+
         # Construct prompt
         prompt = self._build_prompt(drug, diagnosis, patient, sut_chunks)
-        
+
         # Call Google Gemini
         response = self.client.chat.completions.create(
             model="google/gemini-2.0-flash-001",
@@ -553,10 +564,10 @@ class EligibilityChecker:
             ],
             response_format={"type": "json_object"}
         )
-        
+
         # Parse response
         result = json.loads(response.choices[0].message.content)
-        
+
         return EligibilityResult(**result)
 ```
 
@@ -564,7 +575,7 @@ class EligibilityChecker:
 
 ## 6. PROJE YAPISI
 
-```
+```text
 pharmacy-agent/
 │
 ├── README.md
@@ -638,6 +649,7 @@ pharmacy-agent/
 ## 7. IMPLEMENTATION PHASES
 
 ### Phase 1: Setup & Document Processing (Week 1)
+
 - [x] Setup project structure
 - [x] Install dependencies (openai, faiss-cpu, PyPDF2)
 - [x] Extract text from 9.5.17229.pdf
@@ -747,40 +759,40 @@ Analiz ediliyor... ⏳
 
 1️⃣  KLOPIDOGREL HIDROJEN SULFAT
     ✅ SGK KAPSAMINDA KARŞILANIR
-    
+
     📖 SUT Referans: Madde 4.2.15.A (satır 11177-11191)
-    
+
     ✅ Koşullar Sağlanıyor:
        • Koroner arter hastalığı mevcut
        • Kardiyoloji uzmanı raporu var
        • Kullanım süresi belirtilmiş (12 ay)
-    
+
     ℹ️  Not: Tedavi süresi 12 ay geçmemeli
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 2️⃣  METOPROLOL
     ✅ SGK KAPSAMINDA KARŞILANIR
-    
+
     📖 Rapor şartı yok, tüm hekimler reçete edebilir
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 3️⃣  EZETIMIB
     ⚠️  KOŞULLU - EK BİLGİ GEREKİYOR
-    
+
     📖 SUT Referans: Madde 4.2.28.C (satır 12528-12550)
-    
+
     ✅ Sağlanan koşullar:
        • Kardiyoloji uzman raporu mevcut
-    
+
     ⚠️  Eksik bilgiler:
        • LDL düzeyi 100 mg/dL üzerinde olmalı
          → Raporda LDL test sonucu yok
        • En az 6 ay statin tedavisi gerekli
          → Raporda statin kullanım geçmişi belirtilmemiş
-    
-    💡 Öneri: Hastanın LDL test sonucunu ve statin 
+
+    💡 Öneri: Hastanın LDL test sonucunu ve statin
        tedavi geçmişini doktordan talep edin
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -879,7 +891,7 @@ def test_end_to_end():
     # Gerçek rapor + SUT
     report = load_sample_report("sample_1.txt")
     results = sut_checker.check_report(report)
-    
+
     # Doğrulama
     assert results[0].drug_name == "EZETIMIB"
     assert results[0].status in ["ELIGIBLE", "NOT_ELIGIBLE", "CONDITIONAL"]
@@ -963,19 +975,22 @@ python -m src.cli.main
 
 ## 19. NEXT STEPS
 
-### Immediate (This Week):
+### Immediate (This Week)
+
 1. ✅ Requirements gathering - DONE
 2. ✅ Architecture design - IN PROGRESS
 3. ⏳ Get approval on architecture
 4. ⏳ Setup development environment
 
-### Week 1:
+### Week 1
+
 - Implement PDF processing
 - Build chunking logic
 - Index to Pinecone
 - Test retrieval
 
-### Week 2:
+### Week 2
+
 - Build parsers
 - Integrate OpenAI
 - End-to-end testing
@@ -985,13 +1000,15 @@ python -m src.cli.main
 
 ## 20. SORULAR VE KARARLAR
 
-### Açık Sorular:
+### Açık Sorular
+
 1. ❓ SUT dokümantasyonu ne sıklıkla güncellenir?
 2. ❓ Kaç eczacı kullanacak (multi-user gerekli mi)?
 3. ❓ Reçete görüntüsü (foto) yükleme lazım mı (OCR)?
 4. ❓ Sonuçları PDF'e aktarma özelliği?
 
-### Teknik Kararlar:
+### Teknik Kararlar
+
 - ✅ OpenAI (GPT-5-mini) kullan - En iyi Türkçe desteği
 - ✅ Pinecone - Managed, kolay setup
 - ✅ CLI MVP - Hızlı test için

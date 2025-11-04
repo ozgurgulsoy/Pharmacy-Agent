@@ -1,7 +1,7 @@
 """Embeddings generation utilities using OpenAI or OpenRouter."""
 
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from openai import OpenAI
 
 from app.models.eligibility import Chunk
@@ -11,7 +11,8 @@ from app.config.settings import (
     EMBEDDING_PROVIDER,
     OPENROUTER_API_KEY,
     OPENROUTER_BASE_URL,
-    OPENAI_API_KEY
+    OPENAI_API_KEY,
+    OPENROUTER_PROVIDER,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,7 @@ class EmbeddingGenerator:
             client: OpenAI client (optional, will create based on provider)
         """
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.provider_preferences: List[str] = []
         
         # Determine which client to use based on provider
         if EMBEDDING_PROVIDER == "openrouter":
@@ -35,10 +37,33 @@ class EmbeddingGenerator:
                 api_key=OPENROUTER_API_KEY,
                 base_url=OPENROUTER_BASE_URL
             )
+            self.provider_preferences = self._parse_provider_override(OPENROUTER_PROVIDER)
+            if self.provider_preferences:
+                self.logger.info(f"OpenRouter embedding provider preference order: {self.provider_preferences}")
             self.logger.info(f"✅ Using OpenRouter embeddings with model: {EMBEDDING_MODEL} (dimension: {EMBEDDING_DIMENSION})")
         else:
             self.client = client or OpenAI(api_key=OPENAI_API_KEY)
             self.logger.info(f"✅ Using OpenAI embeddings with model: {EMBEDDING_MODEL} (dimension: {EMBEDDING_DIMENSION})")
+
+    @staticmethod
+    def _parse_provider_override(raw_value: Optional[str]) -> List[str]:
+        """Return a provider preference list from a comma-delimited string."""
+        if not raw_value:
+            return []
+        return [item.strip() for item in raw_value.split(",") if item.strip()]
+
+    def _inject_provider_preferences(self, kwargs: Dict[str, Any]) -> None:
+        """Augment embedding kwargs with provider preferences."""
+        if not self.provider_preferences:
+            return
+
+        provider_body = {
+            "order": self.provider_preferences,
+            "allow_fallbacks": len(self.provider_preferences) > 1
+        }
+
+        extra_body = kwargs.setdefault("extra_body", {})
+        extra_body["provider"] = provider_body
     
     def _create_embedding(self, text: str) -> List[float]:
         """
@@ -52,11 +77,15 @@ class EmbeddingGenerator:
         """
         try:
             # Create embedding (OpenRouter's Qwen3 returns 4096 dimensions by default)
-            response = self.client.embeddings.create(
-                model=EMBEDDING_MODEL,
-                input=text,
-                encoding_format="float"
-            )
+            kwargs = {
+                "model": EMBEDDING_MODEL,
+                "input": text,
+                "encoding_format": "float"
+            }
+
+            self._inject_provider_preferences(kwargs)
+            
+            response = self.client.embeddings.create(**kwargs)
             
             embedding = response.data[0].embedding
             
