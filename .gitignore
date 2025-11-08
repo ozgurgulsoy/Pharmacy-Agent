@@ -23,10 +23,11 @@ MANIFEST
 
 # Virtual Environment
 venv/
+..venv/
 env/
 ENV/
 .venv/
-
+..venv/
 # Environment variables
 .env
 .env.local
