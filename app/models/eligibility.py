@@ -33,6 +33,8 @@ class ChunkMetadata:
     keywords: List[str]       # önemli terimler
     drug_related: bool
     has_conditions: bool
+    doc_type: str = "SUT"     # Document type: "SUT", "EK-4/D", "EK-4/E", etc.
+    doc_source: str = ""      # Source filename for traceability
 
 
 @dataclass

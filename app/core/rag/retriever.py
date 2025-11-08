@@ -1,4 +1,4 @@
-"""RAG retrieval engine for SUT document search."""
+"""RAG retrieval engine for SUT and EK-4 document search."""
 
 import time
 import logging
@@ -11,6 +11,7 @@ from openai import OpenAI
 
 from app.core.rag.faiss_store import FAISSVectorStore
 from app.core.document_processing.embeddings import EmbeddingGenerator
+from app.core.parsers.ek4_detector import EK4Detector
 from app.models.report import Drug, Diagnosis, PatientInfo
 from app.models.eligibility import RetrievedChunk, Chunk
 from app.config.settings import EMBEDDING_MODEL
@@ -48,7 +49,7 @@ class EmbeddingCache:
 
 
 class RAGRetriever:
-    """SUT dokümanından ilgili chunk'ları bulan retriever."""
+    """Retriever for SUT and EK-4 documents with intelligent multi-document querying."""
 
     def __init__(
         self,
@@ -59,6 +60,7 @@ class RAGRetriever:
         self.client = openai_client
         self.embedding_generator = EmbeddingGenerator(client=openai_client)
         self.embedding_cache = EmbeddingCache()
+        self.ek4_detector = EK4Detector()
         self.logger = logging.getLogger(self.__class__.__name__)
 
     def retrieve_relevant_chunks(
@@ -66,57 +68,118 @@ class RAGRetriever:
         drug: Drug,
         diagnosis: Optional[Diagnosis] = None,
         patient: Optional[PatientInfo] = None,
-        top_k: int = 3
+        top_k: int = 3,
+        report_text: Optional[str] = None
     ) -> Tuple[List[Dict[str, Any]], Dict[str, float]]:
         """
-        Bir ilaç için ilgili SUT chunk'larını getirir.
+        Retrieves relevant chunks for a drug, checking both SUT and EK-4 documents if needed.
 
         Args:
-            drug: İlaç bilgisi
-            diagnosis: Tanı bilgisi (opsiyonel)
-            patient: Hasta bilgisi (opsiyonel)
-            top_k: Kaç chunk getirileceği
+            drug: Drug information
+            diagnosis: Diagnosis information (optional)
+            patient: Patient information (optional)
+            top_k: Number of chunks to retrieve per document
+            report_text: Full report text for EK-4 detection (optional)
 
         Returns:
-            (İlgili chunk listesi, timing bilgileri)
+            (List of relevant chunks, timing information)
         """
         timings = {}
         total_start = time.time()
         
         self.logger.info(f"Retrieving chunks for drug: {drug.etkin_madde}")
 
-        # 1. Query oluştur
+        # 1. Detect EK-4 references in diagnosis or report
+        ek4_detect_start = time.time()
+        ek4_refs = []
+        
+        # Debug logging
+        self.logger.debug(f"🔍 EK-4 Detection Input (single drug):")
+        self.logger.debug(f"  - diagnosis.tanim: {diagnosis.tanim if diagnosis else 'None'}")
+        self.logger.debug(f"  - report_text length: {len(report_text) if report_text else 0}")
+        
+        if diagnosis and diagnosis.tanim:
+            diag_refs = self.ek4_detector.detect(diagnosis.tanim)
+            ek4_refs.extend(diag_refs)
+            if diag_refs:
+                self.logger.debug(f"  - Found in diagnosis: {[r.full_text for r in diag_refs]}")
+        
+        if report_text:
+            report_refs = self.ek4_detector.detect(report_text)
+            ek4_refs.extend(report_refs)
+            if report_refs:
+                self.logger.debug(f"  - Found in report: {[r.full_text for r in report_refs]}")
+        
+        # Remove duplicates
+        ek4_refs = list(set(ek4_refs))
+        timings['ek4_detection'] = (time.time() - ek4_detect_start) * 1000
+        
+        if ek4_refs:
+            self.logger.info(f"🔍 Detected EK-4 references: {[ref.full_text for ref in ek4_refs]}")
+        else:
+            self.logger.warning(f"⚠️ No EK-4 references detected (diagnosis: {'present' if diagnosis else 'None'}, report_text: {len(report_text) if report_text else 0} chars)")
+        
+        # 2. Query oluştur
         query_start = time.time()
         query_text = self._build_query_text(drug, diagnosis, patient)
         timings['query_build'] = (time.time() - query_start) * 1000
         self.logger.debug(f"Query: {query_text}")
 
-        # 2. Hybrid search: Keyword + Semantic
+        # 3. Hybrid search: Keyword + Semantic
         keyword_start = time.time()
         keyword_results = self._keyword_search(drug.etkin_madde)
         timings['keyword_search'] = (time.time() - keyword_start) * 1000
         
-        # 3. Query embedding oluştur
+        # 4. Query embedding oluştur
         embedding_start = time.time()
         query_embedding = self._create_query_embedding(query_text)
         timings['embedding_creation'] = (time.time() - embedding_start) * 1000
 
-        # 4. Vector search
+        # 5. Vector search with multi-document strategy
         vector_start = time.time()
-        semantic_results = self.vector_store.search(
-            query_embedding=query_embedding,
-            top_k=top_k * 2,
-            filters={"drug_related": True} if self._has_metadata_filter() else None
-        )
+        
+        if ek4_refs:
+            # Multi-document search: top_k from SUT + top_k from each EK-4 doc
+            all_results = []
+            
+            # Get top_k from SUT
+            sut_results = self._search_by_doc_type(
+                query_embedding=query_embedding,
+                doc_type="SUT",
+                top_k=top_k * 2
+            )
+            all_results.extend(sut_results)
+            self.logger.info(f"Retrieved {len(sut_results)} chunks from SUT")
+            
+            # Get top_k from each detected EK-4 document
+            for ek4_ref in ek4_refs:
+                doc_type = f"EK-4/{ek4_ref.variant}"
+                ek4_results = self._search_by_doc_type(
+                    query_embedding=query_embedding,
+                    doc_type=doc_type,
+                    top_k=top_k * 2
+                )
+                all_results.extend(ek4_results)
+                self.logger.info(f"Retrieved {len(ek4_results)} chunks from {doc_type}")
+            
+            semantic_results = all_results
+        else:
+            # Single-document search: Only SUT
+            semantic_results = self.vector_store.search(
+                query_embedding=query_embedding,
+                top_k=top_k * 2,
+                filters={"drug_related": True} if self._has_metadata_filter() else None
+            )
+        
         timings['vector_search'] = (time.time() - vector_start) * 1000
 
-        # 5. Combine and re-rank with keyword boosting
+        # 6. Combine and re-rank with keyword boosting
         rerank_start = time.time()
         final_results = self._hybrid_rerank(
             keyword_results=keyword_results,
             semantic_results=semantic_results,
             drug_name=drug.etkin_madde,
-            top_k=top_k
+            top_k=top_k if not ek4_refs else top_k * (1 + len(ek4_refs))  # More chunks for multi-doc
         )
         timings['reranking'] = (time.time() - rerank_start) * 1000
         
@@ -176,6 +239,41 @@ class RAGRetriever:
         # FAISS için manual filtering yapıyoruz
         return False
 
+    def _search_by_doc_type(
+        self,
+        query_embedding: List[float],
+        doc_type: str,
+        top_k: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Search for chunks from a specific document type.
+        
+        Args:
+            query_embedding: Query embedding vector
+            doc_type: Document type to filter by (e.g., "SUT", "EK-4/D")
+            top_k: Number of results to return
+            
+        Returns:
+            List of matching chunks with scores
+        """
+        # Search with larger k and filter by doc_type
+        all_results = self.vector_store.search(
+            query_embedding=query_embedding,
+            top_k=top_k * 5,  # Over-fetch to account for filtering
+            filters=None
+        )
+        
+        # Filter by doc_type
+        filtered_results = []
+        for result in all_results:
+            metadata = result.get("metadata", {})
+            if metadata.get("doc_type") == doc_type:
+                filtered_results.append(result)
+                if len(filtered_results) >= top_k:
+                    break
+        
+        return filtered_results
+    
     def _keyword_search(self, drug_name: str) -> List[Dict[str, Any]]:
         """
         Fast O(1) keyword search using drug index.
@@ -284,16 +382,18 @@ class RAGRetriever:
         drugs: List[Drug],
         diagnosis: Optional[Diagnosis] = None,
         patient: Optional[PatientInfo] = None,
-        top_k_per_drug: int = 3
+        top_k_per_drug: int = 3,
+        report_text: Optional[str] = None
     ) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, Any]]:
         """
-        Birden fazla ilaç için chunk'ları getirir.
+        Retrieves chunks for multiple drugs with EK-4 awareness.
 
         Args:
-            drugs: İlaç listesi
-            diagnosis: Tanı
-            patient: Hasta bilgisi
-            top_k_per_drug: Her ilaç için kaç chunk
+            drugs: List of drugs
+            diagnosis: Diagnosis information
+            patient: Patient information
+            top_k_per_drug: Number of chunks per drug
+            report_text: Full report text for EK-4 detection
 
         Returns:
             ({drug_name: [chunks]} dictionary, aggregate timings)
@@ -306,6 +406,35 @@ class RAGRetriever:
 
         import time
         total_start = time.time()
+
+        # 0) Detect EK-4 references once for all drugs
+        ek4_detect_start = time.time()
+        ek4_refs = []
+        
+        # Debug logging
+        self.logger.debug(f"🔍 EK-4 Detection Input:")
+        self.logger.debug(f"  - diagnosis.tanim: {diagnosis.tanim if diagnosis else 'None'}")
+        self.logger.debug(f"  - report_text length: {len(report_text) if report_text else 0}")
+        
+        if diagnosis and diagnosis.tanim:
+            diag_refs = self.ek4_detector.detect(diagnosis.tanim)
+            ek4_refs.extend(diag_refs)
+            if diag_refs:
+                self.logger.debug(f"  - Found in diagnosis: {[r.full_text for r in diag_refs]}")
+        
+        if report_text:
+            report_refs = self.ek4_detector.detect(report_text)
+            ek4_refs.extend(report_refs)
+            if report_refs:
+                self.logger.debug(f"  - Found in report: {[r.full_text for r in report_refs]}")
+        
+        ek4_refs = list(set(ek4_refs))
+        ek4_detect_time = (time.time() - ek4_detect_start) * 1000
+        
+        if ek4_refs:
+            self.logger.info(f"🔍 Detected EK-4 references for batch: {[ref.full_text for ref in ek4_refs]}")
+        else:
+            self.logger.warning(f"⚠️ No EK-4 references detected (diagnosis: {'present' if diagnosis else 'None'}, report_text: {len(report_text) if report_text else 0} chars)")
 
         # 1) Build all queries
         query_build_start = time.time()
@@ -382,13 +511,38 @@ class RAGRetriever:
             keyword_results = self._keyword_search(drug.etkin_madde)
             k_time = (time.time() - k_start) * 1000
 
-            # Vector search
+            # Vector search with multi-document strategy
             v_start = time.time()
-            semantic_results = self.vector_store.search(
-                query_embedding=emb,
-                top_k=top_k_per_drug * 2,
-                filters={"drug_related": True} if self._has_metadata_filter() else None
-            )
+            if ek4_refs:
+                # Multi-document search
+                all_results = []
+                
+                # Get from SUT
+                sut_results = self._search_by_doc_type(
+                    query_embedding=emb,
+                    doc_type="SUT",
+                    top_k=top_k_per_drug * 2
+                )
+                all_results.extend(sut_results)
+                
+                # Get from each EK-4 document
+                for ek4_ref in ek4_refs:
+                    doc_type = f"EK-4/{ek4_ref.variant}"
+                    ek4_results = self._search_by_doc_type(
+                        query_embedding=emb,
+                        doc_type=doc_type,
+                        top_k=top_k_per_drug * 2
+                    )
+                    all_results.extend(ek4_results)
+                
+                semantic_results = all_results
+            else:
+                # Single-document search
+                semantic_results = self.vector_store.search(
+                    query_embedding=emb,
+                    top_k=top_k_per_drug * 2,
+                    filters={"drug_related": True} if self._has_metadata_filter() else None
+                )
             v_time = (time.time() - v_start) * 1000
 
             # Re-rank
@@ -397,7 +551,7 @@ class RAGRetriever:
                 keyword_results=keyword_results,
                 semantic_results=semantic_results,
                 drug_name=drug.etkin_madde,
-                top_k=top_k_per_drug
+                top_k=top_k_per_drug if not ek4_refs else top_k_per_drug * (1 + len(ek4_refs))
             )
             r_time = (time.time() - r_start) * 1000
 
@@ -405,6 +559,7 @@ class RAGRetriever:
 
             drug_total = (time.time() - drug_start) * 1000
             all_timings.append({
+                'ek4_detection': ek4_detect_time / len(drugs) if drugs else 0,  # Amortized
                 'keyword_search': k_time,
                 'embedding_creation': 0.0,  # accounted for in batch
                 'vector_search': v_time,
@@ -417,14 +572,16 @@ class RAGRetriever:
 
         # Aggregate timings
         aggregate = {
+            'ek4_detection': ek4_detect_time,
             'query_building': query_build_time,
             'embedding_creation': embedding_time,
             'keyword_search': sum(t['keyword_search'] for t in all_timings),
             'vector_search': sum(t['vector_search'] for t in all_timings),
             'reranking': sum(t['reranking'] for t in all_timings),
             'total': total_time,
-            'avg_per_drug': total_time / len(drugs) if drugs else 0
+            'avg_per_drug': total_time / len(drugs) if drugs else 0,
+            'ek4_refs_found': len(ek4_refs)
         }
 
-        self.logger.info(f"Retrieved chunks for {len(drugs)} drugs in {total_time:.1f}ms (embeddings: {embedding_time:.1f}ms)")
+        self.logger.info(f"Retrieved chunks for {len(drugs)} drugs in {total_time:.1f}ms (embeddings: {embedding_time:.1f}ms, EK-4 refs: {len(ek4_refs)})")
         return results, aggregate

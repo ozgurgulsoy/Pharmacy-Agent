@@ -358,10 +358,15 @@ class EligibilityChecker:
 """
             
             if sut_chunks:
-                for j, chunk in enumerate(sut_chunks[:5], 1):  # Top 5 chunks
+                for j, chunk in enumerate(sut_chunks[:5], 1):  # Top 5 chunks (more for EK-4 cases)
                     metadata = chunk.get('metadata', {})
                     content = metadata.get('content', 'İçerik bulunamadı')
-                    user_prompt += f"\n[Chunk {j}]\n{content}\n"
+                    doc_type = metadata.get('doc_type', 'UNKNOWN')
+                    doc_source = metadata.get('doc_source', '')
+                    
+                    # Add document type label for clarity
+                    doc_label = f"[{doc_type}]" if doc_type != "UNKNOWN" else ""
+                    user_prompt += f"\n[Chunk {j}] {doc_label}\n{content}\n"
             else:
                 user_prompt += "\n⚠️ Bu ilaç için SUT kuralı bulunamadı!\n"
 

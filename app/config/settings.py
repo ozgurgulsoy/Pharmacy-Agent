@@ -16,10 +16,14 @@ LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "openrouter")
 OPENROUTER_BASE_URL: str = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 OPENROUTER_PROVIDER: Optional[str] = os.getenv("OPENROUTER_PROVIDER")
 
+# Embedding Provider - can be "openrouter", "openai", or "nebius"
+EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "openrouter")
+OPENROUTER_EMBEDDING_PROVIDER: Optional[str] = os.getenv("OPENROUTER_EMBEDDING_PROVIDER")  # e.g., "nebius"
+
 # Model Settings
-EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "qwen/qwen3-embedding-8b")  # Qwen3 Embedding 8B via OpenRouter - Türkçe destekli
-EMBEDDING_DIMENSION: int = int(os.getenv("EMBEDDING_DIMENSION", "4096"))  # Qwen3 default dimension
-LLM_MODEL: str = os.getenv("LLM_MODEL", "google/gemini-2.0-flash-001")  # Google Gemini 2.0 Flash via OpenRouter - High quality, fast, cost effective
+EMBEDDING_MODEL: str = os.getenv("EMBEDDING_MODEL", "qwen/qwen3-embedding-8b")  # Default: Qwen3 Embedding 8B via OpenRouter - Türkçe destekli
+EMBEDDING_DIMENSION: int = int(os.getenv("EMBEDDING_DIMENSION", "4096"))  # Qwen3 default: 4096, Nebius default: 4096
+LLM_MODEL: str = os.getenv("LLM_MODEL", "google/gemini-2.5-flash-lite")  # Google Gemini 2.5 Flash via OpenRouter - High quality, fast, cost effective
 
 # Chunk Settings - Optimized for SUT regulatory documents with hierarchical structure
 # Note: text-embedding-3-small supports up to 8191 tokens, so we have plenty of room
@@ -48,20 +52,26 @@ PRESERVE_PARAGRAPHS: bool = os.getenv("PRESERVE_PARAGRAPHS", "true").lower() == 
 # Language Settings
 OUTPUT_LANGUAGE: str = os.getenv("OUTPUT_LANGUAGE", "turkish")
 
-# Embedding Settings
-EMBEDDING_PROVIDER: str = os.getenv("EMBEDDING_PROVIDER", "openrouter")  # "openrouter" or "openai"
-
 # FAISS Settings
 FAISS_INDEX_PATH: str = "data/faiss_index"
 FAISS_METADATA_PATH: str = "data/faiss_metadata.json"
 
 # File Paths
-SUT_PDF_PATH: str = "data/9.5.17229.pdf"
+SUT_PDF_PATH: str = "data/SUT.pdf"
 SAMPLE_REPORTS_DIR: str = "data/sample_reports"
+
+# EK-4 Document Paths
+EK4_DOCUMENTS = {
+    "D": "data/20201207-1230-sut-ek-4-d-38dbc.pdf",
+    "E": "data/20201207-1231-sut-ek-4-e-24c20.pdf",
+    "F": "data/20201207-1232-sut-ek-4-f-8f928.pdf",
+    "G": "data/20201207-1233-sut-ek-4-g-1a6a1.pdf",
+}
 
 # Validation
 def validate_config() -> None:
     """Validate that all required configuration is present."""
+    # Validate LLM provider
     if LLM_PROVIDER == "openrouter":
         if not OPENROUTER_API_KEY:
             raise ValueError("OPENROUTER_API_KEY environment variable is required when using OpenRouter")
@@ -69,13 +79,21 @@ def validate_config() -> None:
         if not OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY environment variable is required when using OpenAI")
     
-    # Check embedding provider
+    # Validate embedding provider
     if EMBEDDING_PROVIDER == "openrouter":
         if not OPENROUTER_API_KEY:
             raise ValueError("OPENROUTER_API_KEY environment variable is required for embeddings via OpenRouter")
+        # If using Nebius through OpenRouter, validate the provider name
+        if OPENROUTER_EMBEDDING_PROVIDER == "nebius":
+            # Nebius embeddings via OpenRouter are supported
+            pass
     elif EMBEDDING_PROVIDER == "openai":
         if not OPENAI_API_KEY:
             raise ValueError("OPENAI_API_KEY environment variable is required for OpenAI embeddings")
+    elif EMBEDDING_PROVIDER == "nebius":
+        # Direct Nebius provider (if supported in future)
+        if not OPENROUTER_API_KEY:
+            raise ValueError("OPENROUTER_API_KEY environment variable is required for Nebius embeddings")
 
 # Call validation on import
 validate_config()

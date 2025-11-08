@@ -12,7 +12,7 @@ from app.config.settings import (
     OPENROUTER_API_KEY,
     OPENROUTER_BASE_URL,
     OPENAI_API_KEY,
-    OPENROUTER_PROVIDER,
+    OPENROUTER_EMBEDDING_PROVIDER,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,10 +37,10 @@ class EmbeddingGenerator:
                 api_key=OPENROUTER_API_KEY,
                 base_url=OPENROUTER_BASE_URL
             )
-            self.provider_preferences = self._parse_provider_override(OPENROUTER_PROVIDER)
+            self.provider_preferences = self._parse_provider_override(OPENROUTER_EMBEDDING_PROVIDER)
             if self.provider_preferences:
                 self.logger.info(f"OpenRouter embedding provider preference order: {self.provider_preferences}")
-            self.logger.info(f"✅ Using OpenRouter embeddings with model: {EMBEDDING_MODEL} (dimension: {EMBEDDING_DIMENSION})")
+            self.logger.info(f"✅ Using OpenRouter embeddings with model: {EMBEDDING_MODEL} (dimension: {EMBEDDING_DIMENSION}) via {OPENROUTER_EMBEDDING_PROVIDER or 'default'}")
         else:
             self.client = client or OpenAI(api_key=OPENAI_API_KEY)
             self.logger.info(f"✅ Using OpenAI embeddings with model: {EMBEDDING_MODEL} (dimension: {EMBEDDING_DIMENSION})")
@@ -133,6 +133,8 @@ class EmbeddingGenerator:
                         "keywords": chunk.metadata.keywords,
                         "drug_related": chunk.metadata.drug_related,
                         "has_conditions": chunk.metadata.has_conditions,
+                        "doc_type": chunk.metadata.doc_type,
+                        "doc_source": chunk.metadata.doc_source,
                         "start_line": chunk.start_line,
                         "end_line": chunk.end_line
                     }

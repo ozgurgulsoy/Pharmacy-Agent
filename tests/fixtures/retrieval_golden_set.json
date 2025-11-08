@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "RAG Retrieval Golden Dataset",
+  "description": "Golden test cases for evaluating RAG retrieval accuracy",
+  "version": "1.0.0",
+  "test_cases": [
+    {
+      "id": "ezetimib_hyperlipidemia_sut",
+      "description": "Ezetimib for hyperlipidemia - single document (SUT only)",
+      "query": {
+        "drug": "EZETİMİB",
+        "form": "Ağızdan katı",
+        "diagnosis": "04.08 - E78.4 Hiperkolesterolemi, Hiperlipidemi (E78)",
+        "diagnosis_details": "En az 6 ay boyunca statinlerle tedavi edilmiş olmasına rağmen LDL düzeyi 100'ün üzerinde kalan hasta",
+        "report_type": "Uzman Hekim Raporu",
+        "ek4_refs": []
+      },
+      "expected_chunks": [
+        {
+          "doc_type": "SUT",
+          "min_rank": 1,
+          "max_rank": 3,
+          "relevance": "HIGHLY_RELEVANT",
+          "content_must_contain": ["ezetimib", "statin", "LDL"],
+          "content_should_contain": ["kolesterol", "hiperlipidemi"],
+          "reasoning": "Ezetimib SUT rules should be in top 3 results"
+        },
+        {
+          "doc_type": "SUT",
+          "min_rank": 1,
+          "max_rank": 5,
+          "relevance": "RELEVANT",
+          "content_must_contain": ["uzman hekim", "raporu"],
+          "reasoning": "Report type requirements should be retrieved"
+        }
+      ],
+      "min_hit_rate": 1.0,
+      "min_mrr": 0.5
+    },
+    {
+      "id": "gabapentin_neuropathy_ek4d",
+      "description": "Gabapentin for neuropathic pain - multi-document (SUT + EK-4/D)",
+      "query": {
+        "drug": "GABAPENTİN",
+        "form": "Ağızdan tablet",
+        "diagnosis": "20.00 – EK-4/D Listesinde Yer Almayan Hastalıklar",
+        "diagnosis_details": "G62.9 POLİNÖROPATİ, TANIMLANMAMIŞ, NÖROPATİK AĞRI",
+        "report_type": "Sağlık Kurulu Raporu",
+        "ek4_refs": ["EK-4/D"]
+      },
+      "expected_chunks": [
+        {
+          "doc_type": "EK-4/D",
+          "min_rank": 1,
+          "max_rank": 3,
+          "relevance": "HIGHLY_RELEVANT",
+          "content_must_contain": ["gabapentin"],
+          "content_should_contain": ["nöropatik", "ağrı", "polinöropati"],
+          "reasoning": "EK-4/D Gabapentin rules should rank highest"
+        },
+        {
+          "doc_type": "SUT",
+          "min_rank": 1,
+          "max_rank": 5,
+          "relevance": "RELEVANT",
+          "content_must_contain": ["sağlık kurulu", "raporu"],
+          "reasoning": "Sağlık Kurulu Raporu requirements from SUT"
+        },
+        {
+          "doc_type": "SUT",
+          "min_rank": 1,
+          "max_rank": 5,
+          "relevance": "RELEVANT",
+          "content_must_contain": ["EK-4", "liste"],
+          "reasoning": "EK-4 list references in SUT"
+        }
+      ],
+      "min_hit_rate": 1.0,
+      "min_mrr": 0.5
+    },
+    {
+      "id": "klopidogrel_coronary_artery_disease",
+      "description": "Klopidogrel for coronary artery disease",
+      "query": {
+        "drug": "KLOPİDOGREL HİDROJEN SÜLFAT",
+        "form": "Ağızdan katı",
+        "diagnosis": "04.02 - I25.0 Koroner arter hastalığı (I20-I25)(I25.1)(I25.5-I25.9)",
+        "diagnosis_details": "Hasta 12.01.2022 tarihinde kurumumuzda koroner anjiyo olmuştur",
+        "report_type": "Uzman Hekim Raporu",
+        "ek4_refs": []
+      },
+      "expected_chunks": [
+        {
+          "doc_type": "SUT",
+          "min_rank": 1,
+          "max_rank": 2,
+          "relevance": "HIGHLY_RELEVANT",
+          "content_must_contain": ["klopidogrel"],
+          "content_should_contain": ["koroner", "arter", "anjiyo"],
+          "reasoning": "Klopidogrel cardiovascular rules should be top result"
+        }
+      ],
+      "min_hit_rate": 1.0,
+      "min_mrr": 0.8
+    },
+    {
+      "id": "leflunomid_rheumatoid_arthritis",
+      "description": "Leflunomid for rheumatoid arthritis",
+      "query": {
+        "drug": "LEFLUNOMID",
+        "form": "Ağızdan tablet",
+        "diagnosis": "09.01.5.1 – Romatoid Artrit (M05–M06) (M08.0, M08.2, M08.3)",
+        "diagnosis_details": "M06.82 DİĞER ROMATOİD ARTRİT, TANIMLANMIŞ, KOL",
+        "report_type": "Uzman Hekim Raporu",
+        "ek4_refs": []
+      },
+      "expected_chunks": [
+        {
+          "doc_type": "SUT",
+          "min_rank": 1,
+          "max_rank": 3,
+          "relevance": "HIGHLY_RELEVANT",
+          "content_must_contain": ["leflunomid"],
+          "content_should_contain": ["romatoid", "artrit"],
+          "reasoning": "Leflunomid rheumatology rules"
+        }
+      ],
+      "min_hit_rate": 1.0,
+      "min_mrr": 0.7
+    },
+    {
+      "id": "atorvastatin_high_ldl",
+      "description": "Atorvastatin for high LDL cholesterol post-angio",
+      "query": {
+        "drug": "ATORVASTATİN KALSİYUM 40 MG",
+        "form": "Ağızdan tablet",
+        "diagnosis": "04.08 – Hiperkolesterolemi, Hiperlipidemi (E78)",
+        "diagnosis_details": "E78.4 HİPERLİPİDEMİ, DİĞER. HASTA 19.01.2023 TARİHİNDE KÖÜ DE ANJİO OLMUŞTUR. LDL DEĞERİ: 107.8",
+        "report_type": "Uzman Hekim Raporu",
+        "ek4_refs": []
+      },
+      "expected_chunks": [
+        {
+          "doc_type": "SUT",
+          "min_rank": 1,
+          "max_rank": 2,
+          "relevance": "HIGHLY_RELEVANT",
+          "content_must_contain": ["atorvastatin", "statin"],
+          "content_should_contain": ["LDL", "kolesterol", "hiperlipidemi"],
+          "reasoning": "Atorvastatin rules for hyperlipidemia"
+        }
+      ],
+      "min_hit_rate": 1.0,
+      "min_mrr": 0.8
+    },
+    {
+      "id": "template_case",
+      "description": "[TEMPLATE] Copy this to add new test cases",
+      "enabled": false,
+      "query": {
+        "drug": "DRUG_NAME",
+        "form": "Ağızdan katı/tablet/sıvı",
+        "diagnosis": "XX.XX - ICD10 Code Description",
+        "diagnosis_details": "Additional context",
+        "report_type": "Uzman Hekim Raporu | Sağlık Kurulu Raporu",
+        "ek4_refs": []
+      },
+      "expected_chunks": [
+        {
+          "doc_type": "SUT | EK-4/D | EK-4/E | EK-4/F | EK-4/G",
+          "min_rank": 1,
+          "max_rank": 3,
+          "relevance": "HIGHLY_RELEVANT | RELEVANT | PARTIALLY_RELEVANT",
+          "content_must_contain": ["term1", "term2"],
+          "content_should_contain": ["optional1", "optional2"],
+          "reasoning": "Explanation of why this chunk should be retrieved"
+        }
+      ],
+      "min_hit_rate": 1.0,
+      "min_mrr": 0.5
+    }
+  ],
+  "evaluation_criteria": {
+    "hit_rate": {
+      "description": "Percentage of queries with at least one relevant chunk in top-K",
+      "target": 0.85,
+      "calculation": "hits / total_queries"
+    },
+    "mrr": {
+      "description": "Mean Reciprocal Rank - average of 1/rank_of_first_relevant_chunk",
+      "target": 0.6,
+      "calculation": "average(1 / first_relevant_rank)"
+    },
+    "doc_type_accuracy": {
+      "description": "Percentage of expected document types found in results",
+      "target": 0.9,
+      "calculation": "found_doc_types / expected_doc_types"
+    }
+  },
+  "notes": [
+    "Test cases are derived from real patient reports in data/patient_report.txt",
+    "Each test case represents a common eligibility checking scenario",
+    "expected_chunks define what SHOULD be retrieved, not what IS retrieved",
+    "Use 'enabled: false' to skip test cases during development",
+    "Add new test cases by copying the template_case and filling in details"
+  ]
+}

@@ -121,6 +121,18 @@ SYSTEM_PROMPT = """Sen SGK/SUT uzman pharmasistisin. Türk Sağlık Mevzuatı ka
 
 === TÜRK SAĞLIK MEVZUATI - TEMEL ONAY KRİTERLERİ ===
 
+**RAPOR TÜRLERİ HİYERARŞİSİ:**
+📋 "Sağlık Kurulu Raporu" = "Uzman Hekim Raporu" + Ek kurul onayı
+   → Sağlık Kurulu Raporu, Uzman Hekim Raporu'nun TÜM gereksinimlerini karşılar
+   → Sağlık Kurulu Raporu gereken yerde Uzman Hekim Raporu da geçerlidir
+   → Sağlık Kurulu Raporu > Uzman Hekim Raporu (daha üst seviye onay)
+
+**RAPOR DEĞERLENDİRME KURALI:**
+✅ Eğer "Sağlık Kurulu Raporu" mevcutsa:
+   → "Uzman hekim raporu gerekli" koşulu OTOMATIK karşılanır
+   → "6 ay süreli sağlık kurulu raporu" koşulu KARŞILANIR
+   → Ek doktor kontrolü gerekmez (kurul zaten birden fazla uzman içerir)
+
 **1. KORONER ARTER HASTALIĞI (I25.0, I25.1, I25.x)**
 ✅ KLORİDOGREL (Antiplatelet):
    - Post-anjiografi hastalar → ONAYLANIR
@@ -238,8 +250,8 @@ class PromptBuilder:
         Returns:
             Formatted prompt
         """
-        # SUT chunks'ı formatla
-        sut_text = PromptBuilder._format_sut_chunks(sut_chunks, max_chunks=3, max_chars_per_chunk=350)
+        # SUT chunks'ı formatla (more chunks for EK-4 cases)
+        sut_text = PromptBuilder._format_sut_chunks(sut_chunks, max_chunks=5, max_chars_per_chunk=400)
 
         # Açıklamalar kısmını ekle (varsa)
         explanations_text = ""
@@ -283,9 +295,13 @@ class PromptBuilder:
             metadata = chunk.get('metadata', {})
             content = metadata.get('content', '')
             section = metadata.get('section', 'Bölüm ?')
+            doc_type = metadata.get('doc_type', '')
+            
+            # Add document type label for clarity (especially for EK-4 documents)
+            doc_label = f" [{doc_type}]" if doc_type else ""
             
             # Ek bilgileri al
-            chunk_parts = [f"[{i}] {section}"]
+            chunk_parts = [f"[{i}] {section}{doc_label}"]
             
             # Sayfa numarası ekle
             if include_page_numbers:

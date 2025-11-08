@@ -94,11 +94,11 @@ class SUTCheckerService:
         top_k: int = TOP_K_CHUNKS
     ) -> Dict[str, Any]:
         """
-        Complete eligibility check workflow.
+        Complete eligibility check workflow with EK-4 document support.
         
         Args:
             report_text: Raw patient report text
-            top_k: Number of SUT chunks to retrieve per drug
+            top_k: Number of chunks to retrieve per drug per document
             
         Returns:
             Dictionary with parsed report info and eligibility results
@@ -113,12 +113,16 @@ class SUTCheckerService:
         # 1. Parse report
         parsed_report = self.parse_report(report_text)
         
-        # 2. Retrieve relevant SUT chunks for each drug
-        sut_chunks_per_drug, retrieval_timings = self.retriever.retrieve_for_multiple_drugs(
+        # 2. Retrieve relevant SUT chunks (pass full report text for EK-4 detection)
+        logger.info("Retrieving relevant SUT chunks...")
+        retrieve_start = time.time()
+        
+        sut_chunks_dict, rag_timings = self.retriever.retrieve_for_multiple_drugs(
             drugs=parsed_report.drugs,
             diagnosis=parsed_report.diagnoses[0] if parsed_report.diagnoses else None,
             patient=parsed_report.patient,
-            top_k_per_drug=top_k
+            top_k_per_drug=top_k,
+            report_text=parsed_report.raw_text  # Pass full report for EK-4 detection
         )
         
         # 3. Check eligibility for all drugs
@@ -127,7 +131,7 @@ class SUTCheckerService:
             diagnoses=parsed_report.diagnoses,
             patient=parsed_report.patient,
             doctor=parsed_report.doctor,
-            sut_chunks_per_drug=sut_chunks_per_drug,
+            sut_chunks_per_drug=sut_chunks_dict,
             explanations=parsed_report.explanations,
             report_type=parsed_report.report_type
         )
@@ -139,7 +143,8 @@ class SUTCheckerService:
             "eligibility_results": eligibility_results,
             "performance": {
                 "total_ms": total_time,
-                "retrieval_ms": sum(retrieval_timings.values())
+                "retrieval_ms": rag_timings.get('total', 0),
+                "ek4_refs_detected": rag_timings.get('ek4_refs_found', 0)
             }
         }
 

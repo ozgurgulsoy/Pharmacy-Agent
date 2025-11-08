@@ -30,7 +30,7 @@ from app.core.llm.eligibility_checker import EligibilityChecker
 
 # Setup logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.INFO,  # INFO level for production (use DEBUG for troubleshooting)
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
@@ -140,13 +140,14 @@ class PharmacyAPI:
         parsed_report = self.parser.parse_report(report_text)
         timings['parsing'] = (time.time() - parse_start) * 1000
 
-        # 2. RAG retrieval for all drugs
+        # 2. RAG retrieval for all drugs (pass full report for EK-4 detection)
         retrieval_start = time.time()
         sut_chunks_per_drug, retrieval_timings = self.retriever.retrieve_for_multiple_drugs(
             drugs=parsed_report.drugs,
             diagnosis=parsed_report.diagnoses[0] if parsed_report.diagnoses else None,
             patient=parsed_report.patient,
-            top_k_per_drug=TOP_K_CHUNKS
+            top_k_per_drug=TOP_K_CHUNKS,
+            report_text=parsed_report.raw_text  # Pass full report for EK-4 detection
         )
         timings['retrieval'] = (time.time() - retrieval_start) * 1000
 
@@ -158,7 +159,8 @@ class PharmacyAPI:
             patient=parsed_report.patient,
             doctor=parsed_report.doctor,
             sut_chunks_per_drug=sut_chunks_per_drug,
-            explanations=parsed_report.explanations
+            explanations=parsed_report.explanations,
+            report_type=parsed_report.report_type  # Pass report type for hierarchy check
         )
         timings['eligibility_check'] = (time.time() - eligibility_start) * 1000
 

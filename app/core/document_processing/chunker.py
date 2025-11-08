@@ -33,16 +33,20 @@ class SUTDocumentChunker:
     - hybrid: Section-based chunking with size constraints (default)
     """
 
-    def __init__(self, strategy: str = CHUNKING_STRATEGY):
+    def __init__(self, strategy: str = CHUNKING_STRATEGY, doc_type: str = "SUT", doc_source: str = "9.5.17229.pdf"):
         """
         Initialize the chunker.
         
         Args:
             strategy: Chunking strategy ("semantic", "fixed", or "hybrid")
+            doc_type: Document type identifier (e.g., "SUT", "EK-4/D")
+            doc_source: Source filename for metadata
         """
         self.logger = logging.getLogger(self.__class__.__name__)
         self.strategy = strategy
-        self.logger.info(f"Initialized chunker with strategy: {strategy}")
+        self.doc_type = doc_type
+        self.doc_source = doc_source
+        self.logger.info(f"Initialized chunker with strategy: {strategy}, doc_type: {doc_type}")
 
     def chunk_document(self, text: str) -> List[Chunk]:
         """
@@ -288,8 +292,14 @@ class SUTDocumentChunker:
         Returns:
             Chunk object
         """
-        chunk_id = f"sut_chunk_{idx:04d}"
+        # Create chunk ID with document type prefix
+        doc_prefix = self.doc_type.lower().replace("/", "_").replace("-", "_")
+        chunk_id = f"{doc_prefix}_chunk_{idx:04d}"
+        
         metadata = self._enrich_metadata(text, start_ref, end_ref)
+        # Add document source metadata
+        metadata.doc_type = self.doc_type
+        metadata.doc_source = self.doc_source
         
         return Chunk(
             chunk_id=chunk_id,
